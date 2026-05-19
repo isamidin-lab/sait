@@ -1,18 +1,26 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
-import type { Question } from '../../lib/types';
 import Spinner from '../../components/Spinner';
 import { Clock, Tag, User, Send, Trash2, X } from 'lucide-react';
 
+interface FireQuestion {
+  id: string;
+  question_text: string;
+  author_name: string;
+  author_email: string | null;
+  category: string;
+  status: string;
+  created_at: { seconds: number } | null;
+}
+
 export default function PendingQuestions() {
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<FireQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [answeringId, setAnsweringId] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const { user } = useAuth();
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -20,107 +28,67 @@ export default function PendingQuestions() {
   }, []);
 
   const fetchQuestions = async () => {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('*, categories(*)')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    if (data) setQuestions(data as unknown as Question[]);
-    setLoading(false);
+    try {
+      const q = query(
+        collection(db, 'questions'),
+        where('status', '==', 'pending'),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+      setQuestions(data);
+    } catch (err) {
+      console.error('Error fetching pending questions:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAnswer = async (questionId: string) => {
     if (!answerText.trim()) return;
     setSubmitting(true);
 
-    // Get fresh session to guarantee JWT is active and admin_id is current
-    const { data: { session } } = await supabase.auth.getSession();
-    const adminId = session?.user?.id;
-
-    if (!adminId) {
-      addToast('error', 'Сессия истекла. Пожалуйста, войдите снова.');
-      setSubmitting(false);
-      return;
-    }
-
-    const { data: existing } = await supabase
-      .from('answers')
-      .select('id')
-      .eq('question_id', questionId)
-      .maybeSingle();
-
-    let answerError;
-    if (existing) {
-      ({ error: answerError } = await supabase
-        .from('answers')
-        .update({
-          answer_text: answerText.trim(),
-          published_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id));
-    } else {
-      ({ error: answerError } = await supabase.from('answers').insert({
-        question_id: questionId,
-        admin_id: adminId,
+    try {
+      await updateDoc(doc(db, 'questions', questionId), {
         answer_text: answerText.trim(),
-        published_at: new Date().toISOString(),
-      }));
-    }
-
-    if (answerError) {
-      addToast('error', `Ошибка при отправке ответа: ${answerError.message}`);
+        status: 'published',
+        answer_updated_at: serverTimestamp(),
+      });
+      addToast('success', 'Ответ опубликован');
+      setAnsweringId(null);
+      setAnswerText('');
+      fetchQuestions();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Неизвестная ошибка';
+      addToast('error', `Ошибка при отправке ответа: ${msg}`);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    const { error: statusError } = await supabase
-      .from('questions')
-      .update({ status: 'published' })
-      .eq('id', questionId);
-
-    if (statusError) {
-      addToast('error', `Ошибка при обновлении статуса: ${statusError.message}`);
-      setSubmitting(false);
-      return;
-    }
-
-    addToast('success', 'Ответ опубликован');
-    setAnsweringId(null);
-    setAnswerText('');
-    setSubmitting(false);
-    fetchQuestions();
   };
 
   const handleReject = async (questionId: string) => {
-    const { error } = await supabase
-      .from('questions')
-      .update({ status: 'rejected' })
-      .eq('id', questionId);
-
-    if (error) {
+    try {
+      await updateDoc(doc(db, 'questions', questionId), { status: 'rejected' });
+      addToast('info', 'Вопрос отклонён');
+      fetchQuestions();
+    } catch {
       addToast('error', 'Ошибка при отклонении вопроса');
-      return;
     }
-
-    addToast('info', 'Вопрос отклонен');
-    fetchQuestions();
   };
 
   const handleDelete = async (questionId: string) => {
-    const { error } = await supabase.from('questions').delete().eq('id', questionId);
-    if (error) {
+    try {
+      await deleteDoc(doc(db, 'questions', questionId));
+      addToast('info', 'Вопрос удалён');
+      fetchQuestions();
+    } catch {
       addToast('error', 'Ошибка при удалении вопроса');
-      return;
     }
-    addToast('info', 'Вопрос удален');
-    fetchQuestions();
   };
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
+  const formatDate = (ts: { seconds: number } | null) => {
+    if (!ts) return '';
+    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -163,7 +131,7 @@ export default function PendingQuestions() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
                     <Tag className="w-3 h-3" />
-                    {q.categories?.name || 'Без категории'}
+                    {q.category || 'Без категории'}
                   </span>
                   <span className="text-xs text-slate-400 flex items-center gap-1">
                     <Clock className="w-3 h-3" />

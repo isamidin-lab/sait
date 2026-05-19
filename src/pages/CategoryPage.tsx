@@ -1,72 +1,86 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import type { Category, Article, QuestionWithAnswer } from '../lib/types';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import ArticleCard from '../components/ArticleCard';
 import QuestionCard from '../components/QuestionCard';
 import Spinner from '../components/Spinner';
 import { ArrowLeft, Tag, FileText, MessageCircle } from 'lucide-react';
 
+interface FireArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  image_url: string | null;
+  video_url: string | null;
+  audio_url: string | null;
+  file_url: string | null;
+  views: number;
+  likes: number;
+  status: string;
+  created_at: { seconds: number } | null;
+}
+
+interface FireQuestion {
+  id: string;
+  question_text: string;
+  author_name: string;
+  category: string;
+  status: string;
+  answer_text?: string | null;
+  answer_updated_at?: { seconds: number } | null;
+  created_at?: { seconds: number } | null;
+  likes?: number;
+}
+
 export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
-  const [category, setCategory] = useState<Category | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [questions, setQuestions] = useState<QuestionWithAnswer[]>([]);
+  const [articles, setArticles] = useState<FireArticle[]>([]);
+  const [questions, setQuestions] = useState<FireQuestion[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const categoryName = slug
+    ? slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    : '';
+
   useEffect(() => {
-    if (slug) fetchCategoryData();
+    if (slug) fetchData();
   }, [slug]);
 
-  const fetchCategoryData = async () => {
+  const fetchData = async () => {
     setLoading(true);
-    const { data: catData } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('slug', slug)
-      .maybeSingle();
-
-    if (catData) {
-      setCategory(catData);
-      const [articlesRes, questionsRes] = await Promise.all([
-        supabase
-          .from('articles')
-          .select('*, categories(*)')
-          .eq('category_id', catData.id)
-          .eq('status', 'published')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('questions')
-          .select('*, categories(*), answers(*)')
-          .eq('category_id', catData.id)
-          .eq('status', 'published')
-          .order('created_at', { ascending: false }),
+    try {
+      const [articlesSnap, questionsSnap] = await Promise.all([
+        getDocs(query(
+          collection(db, 'articles'),
+          where('status', '==', 'published'),
+          orderBy('created_at', 'desc')
+        )),
+        getDocs(query(
+          collection(db, 'questions'),
+          where('status', '==', 'published'),
+          orderBy('created_at', 'desc')
+        )),
       ]);
 
-      if (articlesRes.data) setArticles(articlesRes.data as Article[]);
-      if (questionsRes.data) setQuestions(questionsRes.data as QuestionWithAnswer[]);
+      const allArticles = articlesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
+      const allQuestions = questionsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+
+      const normalizedSlug = slug!.toLowerCase().replace(/-/g, ' ');
+      setArticles(allArticles.filter((a) => a.category?.toLowerCase() === normalizedSlug));
+      setQuestions(allQuestions.filter((q) => q.category?.toLowerCase() === normalizedSlug));
+    } catch (err) {
+      console.error('Error fetching category data:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (loading) {
     return (
       <div className="flex justify-center py-16">
         <Spinner className="w-8 h-8 text-emerald-600" />
-      </div>
-    );
-  }
-
-  if (!category) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <Tag className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-          <p className="text-slate-500 text-lg mb-4">Категория не найдена</p>
-          <Link to="/" className="text-emerald-600 hover:text-emerald-700 font-medium">
-            На главную
-          </Link>
-        </div>
       </div>
     );
   }
@@ -89,11 +103,8 @@ export default function CategoryPage() {
             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
               <Tag className="w-5 h-5 text-emerald-600" />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">{category.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">{categoryName}</h1>
           </div>
-          {category.description && (
-            <p className="text-slate-500 mt-1 ml-13">{category.description}</p>
-          )}
         </div>
 
         {!hasContent ? (

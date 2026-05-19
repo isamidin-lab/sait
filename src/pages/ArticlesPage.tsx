@@ -1,60 +1,75 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import type { Category, Article } from '../lib/types';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
 import { FileText, Filter, Headphones, ChevronDown } from 'lucide-react';
 
 const PAGE_SIZE = 9;
 
+interface FireArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  image_url: string | null;
+  video_url: string | null;
+  audio_url: string | null;
+  file_url: string | null;
+  views: number;
+  likes: number;
+  status: string;
+  created_at: { seconds: number } | null;
+}
+
 export default function ArticlesPage() {
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [articles, setArticles] = useState<FireArticle[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     fetchArticles();
-    fetchCategories();
   }, []);
 
   const fetchArticles = async () => {
-    const { data, error } = await supabase
-      .from('articles')
-      .select('*, categories(*)')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    if (data) setArticles(data as Article[]);
-    setLoading(false);
-  };
-
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('sort_order');
-    if (data) setCategories(data.filter((c) => c.slug !== 'general'));
+    try {
+      const q = query(
+        collection(db, 'articles'),
+        where('status', '==', 'published'),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
+      setArticles(data);
+      setCategories(Array.from(new Set(data.map((a) => a.category).filter(Boolean))));
+    } catch (err) {
+      console.error('Error fetching articles:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredArticles = useMemo(() => {
-    let result = articles;
-    if (selectedCategory !== 'all') {
-      result = result.filter((a) => a.category_id === selectedCategory);
-    }
-    return result;
+    if (selectedCategory === 'all') return articles;
+    return articles.filter((a) => a.category === selectedCategory);
   }, [articles, selectedCategory]);
 
   const paginatedArticles = filteredArticles.slice(0, visibleCount);
   const hasMore = visibleCount < filteredArticles.length;
-  const audioArticles = articles.filter((a) => a.audio_url);
+  const audioArticles = articles.filter((a) => a.audio_url && a.status === 'published');
 
-  const handleCategoryChange = (catId: string) => {
-    setSelectedCategory(catId);
+  const handleCategoryChange = (cat: string) => {
+    setSelectedCategory(cat);
     setVisibleCount(PAGE_SIZE);
+  };
+
+  const formatDate = (ts: { seconds: number } | null) => {
+    if (!ts) return '';
+    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
   };
 
   if (loading) {
@@ -72,9 +87,7 @@ export default function ArticlesPage() {
           <div className="flex items-center justify-center gap-3 mb-4">
             <FileText className="w-10 h-10 text-emerald-400" />
           </div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-3">
-            Статьи / Аудио
-          </h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-3">Статьи / Аудио</h1>
           <p className="text-emerald-200/80 text-lg max-w-xl mx-auto">
             Полезные статьи и аудиолекции на исламские темы
           </p>
@@ -90,34 +103,21 @@ export default function ArticlesPage() {
             </div>
             <div className="space-y-3">
               {audioArticles.map((article) => (
-                <div
-                  key={article.id}
-                  className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition-shadow"
-                >
+                <div key={article.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-start gap-4">
                     {article.image_url ? (
-                      <img
-                        src={article.image_url}
-                        alt={article.title}
-                        className="w-16 h-16 rounded-lg object-cover shrink-0"
-                      />
+                      <img src={article.image_url} alt={article.title} className="w-16 h-16 rounded-lg object-cover shrink-0" />
                     ) : (
                       <div className="w-16 h-16 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
                         <Headphones className="w-6 h-6 text-emerald-400" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <Link
-                        to={`/article/${article.id}`}
-                        className="font-semibold text-slate-800 hover:text-emerald-700 transition-colors"
-                      >
+                      <p className="font-semibold text-slate-800 hover:text-emerald-700 transition-colors">
                         {article.title}
-                      </Link>
-                      {article.categories && (
-                        <p className="text-xs text-emerald-600 font-medium mt-0.5">
-                          {article.categories.name}
-                        </p>
-                      )}
+                      </p>
+                      <p className="text-xs text-emerald-600 font-medium mt-0.5">{article.category}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{formatDate(article.created_at)}</p>
                       <div className="mt-2">
                         <audio controls className="w-full h-10" preload="metadata">
                           <source src={article.audio_url!} type="audio/mpeg" />
@@ -150,15 +150,15 @@ export default function ArticlesPage() {
             </button>
             {categories.map((cat) => (
               <button
-                key={cat.id}
-                onClick={() => handleCategoryChange(cat.id)}
+                key={cat}
+                onClick={() => handleCategoryChange(cat)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  selectedCategory === cat.id
+                  selectedCategory === cat
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
                     : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
                 }`}
               >
-                {cat.name}
+                {cat}
               </button>
             ))}
           </div>
@@ -177,7 +177,7 @@ export default function ArticlesPage() {
                     className="inline-flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 hover:text-emerald-700 hover:border-emerald-300 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md"
                   >
                     <ChevronDown className="w-4 h-4" />
-                    Загрузить еще ({filteredArticles.length - visibleCount} осталось)
+                    Загрузить ещё ({filteredArticles.length - visibleCount} осталось)
                   </button>
                 </div>
               )}

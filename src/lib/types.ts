@@ -17,6 +17,8 @@ export interface Question {
   views: number;
   likes: number;
   created_at: string;
+  answer_text?: string | null;
+  answer_updated_at?: string | null;
   categories?: Category;
   answers?: Answer[];
 }
@@ -40,6 +42,7 @@ export interface Article {
   id: string;
   title: string;
   category_id: string;
+  category_name?: string;
   content: string;
   image_url: string | null;
   video_url: string | null;

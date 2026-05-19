@@ -1,42 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useToast } from '../contexts/ToastContext';
-import type { Category } from '../lib/types';
 import Spinner from '../components/Spinner';
 import { Send, ArrowLeft, MessageCircle } from 'lucide-react';
 
+const CATEGORIES = [
+  'Акыда',
+  'Фикх',
+  'Коран и тафсир',
+  'История ислама',
+  'Нравственность и воспитание',
+  'Другое',
+];
+
 export default function AskPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fetchingCategories, setFetchingCategories] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const { addToast } = useToast();
 
   const [form, setForm] = useState({
     authorName: '',
     authorEmail: '',
-    categoryId: '',
+    category: CATEGORIES[0],
     questionText: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('sort_order');
-    if (data && data.length > 0) {
-      setCategories(data);
-      setForm((prev) => ({ ...prev, categoryId: data[0].id }));
-    }
-    setFetchingCategories(false);
-  };
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -45,9 +36,6 @@ export default function AskPage() {
     }
     if (form.questionText.trim().length < 10) {
       newErrors.questionText = 'Вопрос должен содержать минимум 10 символов';
-    }
-    if (!form.categoryId) {
-      newErrors.categoryId = 'Выберите категорию';
     }
     if (form.authorEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.authorEmail)) {
       newErrors.authorEmail = 'Введите корректный email';
@@ -61,23 +49,24 @@ export default function AskPage() {
     if (!validate()) return;
 
     setLoading(true);
-    const { error } = await supabase.from('questions').insert({
-      category_id: form.categoryId,
-      author_name: form.authorName.trim(),
-      author_email: form.authorEmail.trim() || null,
-      question_text: form.questionText.trim(),
-      status: 'pending',
-    });
-
-    setLoading(false);
-
-    if (error) {
+    try {
+      await addDoc(collection(db, 'questions'), {
+        author_name: form.authorName.trim(),
+        author_email: form.authorEmail.trim() || null,
+        category: form.category,
+        question_text: form.questionText.trim(),
+        status: 'pending',
+        answer_text: null,
+        answer_updated_at: null,
+        created_at: serverTimestamp(),
+      });
+      setSubmitted(true);
+      addToast('success', 'Ваш вопрос успешно отправлен и находится на рассмотрении у администрации');
+    } catch {
       addToast('error', 'Ошибка при отправке вопроса. Попробуйте позже.');
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    setSubmitted(true);
-    addToast('success', 'Ваш вопрос успешно отправлен и находится на рассмотрении у администрации');
   };
 
   if (submitted) {
@@ -87,9 +76,7 @@ export default function AskPage() {
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <MessageCircle className="w-8 h-8 text-emerald-600" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-3">
-            Вопрос отправлен!
-          </h2>
+          <h2 className="text-2xl font-bold text-slate-800 mb-3">Вопрос отправлен!</h2>
           <p className="text-slate-600 mb-8 leading-relaxed">
             Ваш вопрос успешно отправлен и находится на рассмотрении у администрации.
             После публикации ответа он появится на главной странице.
@@ -104,12 +91,12 @@ export default function AskPage() {
             <button
               onClick={() => {
                 setSubmitted(false);
-                setForm({ authorName: '', authorEmail: '', categoryId: categories[0]?.id || '', questionText: '' });
+                setForm({ authorName: '', authorEmail: '', category: CATEGORIES[0], questionText: '' });
                 setErrors({});
               }}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
             >
-              Задать еще вопрос
+              Задать ещё вопрос
             </button>
           </div>
         </div>
@@ -178,34 +165,21 @@ export default function AskPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Категория
-              </label>
-              {fetchingCategories ? (
-                <Spinner className="w-5 h-5 text-emerald-600" />
-              ) : (
-                <select
-                  value={form.categoryId}
-                  onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all bg-white ${
-                    errors.categoryId ? 'border-red-300' : 'border-slate-200'
-                  }`}
-                >
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {errors.categoryId && (
-                <p className="text-red-500 text-xs mt-1">{errors.categoryId}</p>
-              )}
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Категория</label>
+              <select
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all bg-white"
+              >
+                {CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Ваш вопрос
+                Ваш вопрос <span className="text-red-400">*</span>
               </label>
               <textarea
                 value={form.questionText}

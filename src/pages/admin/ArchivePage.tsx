@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
-import { useAuth } from '../../contexts/AuthContext';
-import type { Question, Answer, Category } from '../../lib/types';
 import Spinner from '../../components/Spinner';
 import {
   Archive,
@@ -18,48 +17,60 @@ import {
   Clock,
 } from 'lucide-react';
 
-interface QuestionWithAnswer extends Question {
-  answers: Answer[];
+const CATEGORIES = [
+  'Акыда',
+  'Фикх',
+  'Коран и тафсир',
+  'История ислама',
+  'Нравственность и воспитание',
+  'Другое',
+];
+
+interface FireQuestion {
+  id: string;
+  question_text: string;
+  author_name: string;
+  author_email: string | null;
+  category: string;
+  status: string;
+  answer_text: string | null;
+  answer_updated_at: { seconds: number } | null;
+  created_at: { seconds: number } | null;
 }
 
 export default function ArchivePage() {
-  const [questions, setQuestions] = useState<QuestionWithAnswer[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [questions, setQuestions] = useState<FireQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const { addToast } = useToast();
-  const { user } = useAuth();
 
   useEffect(() => {
     fetchQuestions();
-    fetchCategories();
   }, []);
 
   const fetchQuestions = async () => {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('*, categories(*), answers(*)')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error(error);
-    if (data) setQuestions(data as unknown as QuestionWithAnswer[]);
-    setLoading(false);
+    try {
+      const q = query(
+        collection(db, 'questions'),
+        where('status', '==', 'published'),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await getDocs(q);
+      setQuestions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion)));
+    } catch (err) {
+      console.error('Error fetching published questions:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const fetchCategories = async () => {
-    const { data } = await supabase.from('categories').select('*').order('sort_order');
-    if (data) setCategories(data);
-  };
-
-  const openEdit = (q: QuestionWithAnswer) => {
-    const answer = q.answers?.[0];
+  const openEdit = (q: FireQuestion) => {
     setEditingId(q.id);
-    setEditText(answer?.answer_text ?? '');
-    setEditCategory(q.category_id);
+    setEditText(q.answer_text ?? '');
+    setEditCategory(q.category ?? CATEGORIES[0]);
   };
 
   const closeEdit = () => {
@@ -68,94 +79,61 @@ export default function ArchivePage() {
     setEditCategory('');
   };
 
-  const handleSave = async (q: QuestionWithAnswer) => {
+  const handleSave = async (q: FireQuestion) => {
     if (!editText.trim()) {
       addToast('error', 'Текст ответа не может быть пустым');
       return;
     }
     setSaving(true);
-
-    const answer = q.answers?.[0];
-
-    if (answer) {
-      // Update existing answer
-      const { error } = await supabase
-        .from('answers')
-        .update({
-          answer_text: editText.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', answer.id);
-
-      if (error) {
-        addToast('error', `Ошибка при сохранении ответа: ${error.message}`);
-        setSaving(false);
-        return;
-      }
-    } else {
-      // No answer yet — create one (edge case: published without answer)
-      const { error } = await supabase.from('answers').insert({
-        question_id: q.id,
-        admin_id: user!.id,
+    try {
+      await updateDoc(doc(db, 'questions', q.id), {
         answer_text: editText.trim(),
-        published_at: new Date().toISOString(),
+        category: editCategory,
+        answer_updated_at: serverTimestamp(),
       });
-
-      if (error) {
-        addToast('error', `Ошибка при создании ответа: ${error.message}`);
-        setSaving(false);
-        return;
-      }
+      addToast('success', 'Ответ обновлён');
+      closeEdit();
+      fetchQuestions();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Неизвестная ошибка';
+      addToast('error', `Ошибка при сохранении: ${msg}`);
+    } finally {
+      setSaving(false);
     }
-
-    // Update category if changed
-    if (editCategory && editCategory !== q.category_id) {
-      const { error } = await supabase
-        .from('questions')
-        .update({ category_id: editCategory })
-        .eq('id', q.id);
-
-      if (error) {
-        addToast('error', 'Ошибка при изменении категории');
-        setSaving(false);
-        return;
-      }
-    }
-
-    addToast('success', 'Ответ обновлён');
-    setSaving(false);
-    closeEdit();
-    fetchQuestions();
   };
 
-  const handleUnpublish = async (q: QuestionWithAnswer) => {
-    if (q.answers?.[0]) {
-      await supabase.from('answers').delete().eq('question_id', q.id);
+  const handleUnpublish = async (q: FireQuestion) => {
+    try {
+      await updateDoc(doc(db, 'questions', q.id), {
+        status: 'pending',
+        answer_text: null,
+        answer_updated_at: null,
+      });
+      addToast('info', 'Вопрос возвращён в новые');
+      fetchQuestions();
+    } catch {
+      addToast('error', 'Ошибка при снятии с публикации');
     }
-    const { error } = await supabase
-      .from('questions')
-      .update({ status: 'pending' })
-      .eq('id', q.id);
-
-    if (error) { addToast('error', 'Ошибка при снятии с публикации'); return; }
-    addToast('info', 'Вопрос возвращён в новые');
-    fetchQuestions();
   };
 
-  const handleDelete = async (q: QuestionWithAnswer) => {
-    await supabase.from('answers').delete().eq('question_id', q.id);
-    const { error } = await supabase.from('questions').delete().eq('id', q.id);
-    if (error) { addToast('error', 'Ошибка при удалении'); return; }
-    addToast('info', 'Вопрос удалён');
-    fetchQuestions();
+  const handleDelete = async (q: FireQuestion) => {
+    try {
+      await deleteDoc(doc(db, 'questions', q.id));
+      addToast('info', 'Вопрос удалён');
+      fetchQuestions();
+    } catch {
+      addToast('error', 'Ошибка при удалении');
+    }
   };
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('ru-RU', {
+  const formatDate = (ts: { seconds: number } | null) => {
+    if (!ts) return '';
+    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     });
+  };
 
   if (loading) {
     return (
@@ -183,9 +161,7 @@ export default function ArchivePage() {
       ) : (
         <div className="space-y-4">
           {questions.map((q) => {
-            const answer = q.answers?.[0];
             const isEditing = editingId === q.id;
-
             return (
               <div
                 key={q.id}
@@ -194,11 +170,10 @@ export default function ArchivePage() {
                 }`}
               >
                 <div className="p-5">
-                  {/* Meta */}
                   <div className="flex items-center gap-2 mb-3 flex-wrap">
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
                       <Tag className="w-3 h-3" />
-                      {q.categories?.name}
+                      {q.category || 'Без категории'}
                     </span>
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       <Calendar className="w-3 h-3" />
@@ -210,7 +185,6 @@ export default function ArchivePage() {
                     </span>
                   </div>
 
-                  {/* Question */}
                   <p className="text-slate-800 font-semibold text-base mb-1 leading-snug">
                     {q.question_text}
                   </p>
@@ -220,23 +194,22 @@ export default function ArchivePage() {
                     {q.author_email && <span className="ml-1">&mdash; {q.author_email}</span>}
                   </p>
 
-                  {/* Answer display (always visible when not editing) */}
                   {!isEditing && (
                     <>
-                      {answer ? (
+                      {q.answer_text ? (
                         <div className="rounded-xl overflow-hidden border border-amber-200/70 mb-4">
                           <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-2 flex items-center gap-2">
                             <MessageSquare className="w-3.5 h-3.5 text-white" />
                             <span className="text-xs font-semibold text-white">Ответ администрации</span>
-                            {answer.published_at && (
+                            {q.answer_updated_at && (
                               <span className="text-xs text-amber-100 ml-auto opacity-90">
-                                {formatDate(answer.published_at)}
+                                {formatDate(q.answer_updated_at)}
                               </span>
                             )}
                           </div>
                           <div className="bg-amber-50/40 px-4 py-3">
                             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                              {answer.answer_text}
+                              {q.answer_text}
                             </p>
                           </div>
                         </div>
@@ -247,7 +220,6 @@ export default function ArchivePage() {
                         </div>
                       )}
 
-                      {/* Action buttons */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <button
                           onClick={() => openEdit(q)}
@@ -274,7 +246,6 @@ export default function ArchivePage() {
                     </>
                   )}
 
-                  {/* Edit form — shown inline when editing */}
                   {isEditing && (
                     <div className="space-y-3">
                       <div>
@@ -284,18 +255,17 @@ export default function ArchivePage() {
                           onChange={(e) => setEditCategory(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500"
                         >
-                          {categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                          {CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
                           ))}
                         </select>
                       </div>
-
                       <div>
                         <label className="block text-xs font-medium text-slate-600 mb-1">
                           Текст ответа
-                          {answer?.updated_at && (
+                          {q.answer_updated_at && (
                             <span className="ml-2 font-normal text-slate-400">
-                              (последнее обновление: {formatDate(answer.updated_at)})
+                              (обновлено: {formatDate(q.answer_updated_at)})
                             </span>
                           )}
                         </label>
@@ -308,7 +278,6 @@ export default function ArchivePage() {
                           autoFocus
                         />
                       </div>
-
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleSave(q)}

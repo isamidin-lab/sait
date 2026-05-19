@@ -1,16 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import type { Article } from '../lib/types';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import Spinner from '../components/Spinner';
-import { ArrowLeft, Calendar, Tag, Eye, Heart, Headphones, Download, Play, BookOpen } from 'lucide-react';
+import { ArrowLeft, Calendar, Tag, Headphones, Download, Play, BookOpen } from 'lucide-react';
 
-function getFingerprint(): string {
-  const stored = localStorage.getItem('za_fingerprint');
-  if (stored) return stored;
-  const fp = crypto.randomUUID();
-  localStorage.setItem('za_fingerprint', fp);
-  return fp;
+interface FireArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  image_url: string | null;
+  video_url: string | null;
+  audio_url: string | null;
+  file_url: string | null;
+  views: number;
+  likes: number;
+  status: string;
+  created_at: { seconds: number } | null;
 }
 
 function getYouTubeId(url: string): string | null {
@@ -42,68 +49,33 @@ function renderContent(text: string) {
 
 export default function ArticlePage() {
   const { id } = useParams<{ id: string }>();
-  const [article, setArticle] = useState<Article | null>(null);
+  const [article, setArticle] = useState<FireArticle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
-  const [viewCount, setViewCount] = useState(0);
-  const viewedRef = useRef(false);
-  const fingerprint = getFingerprint();
 
   useEffect(() => {
     if (id) fetchArticle();
   }, [id]);
 
   const fetchArticle = async () => {
-    const { data, error } = await supabase
-      .from('articles')
-      .select('*, categories(*)')
-      .eq('id', id)
-      .eq('status', 'published')
-      .maybeSingle();
-
-    if (error) console.error(error);
-    if (data) {
-      setArticle(data as Article);
-      setLikeCount(data.likes);
-      setViewCount(data.views);
-      checkIfLiked(data.id);
-      if (!viewedRef.current) {
-        viewedRef.current = true;
-        setViewCount((prev) => prev + 1);
-        supabase.rpc('increment_article_views', { p_article_id: data.id });
+    try {
+      const snap = await getDoc(doc(db, 'articles', id!));
+      if (snap.exists()) {
+        const data = { id: snap.id, ...snap.data() } as FireArticle;
+        if (data.status === 'published') {
+          setArticle(data);
+        }
       }
+    } catch (err) {
+      console.error('Error fetching article:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const checkIfLiked = async (articleId: string) => {
-    const { data } = await supabase
-      .from('article_likes')
-      .select('id')
-      .eq('article_id', articleId)
-      .eq('user_fingerprint', fingerprint)
-      .maybeSingle();
-    setLiked(!!data);
-  };
-
-  const handleLike = async () => {
-    if (!article) return;
-    const { data, error } = await supabase.rpc('toggle_article_like', {
-      p_article_id: article.id,
-      p_fingerprint: fingerprint,
-    });
-    if (error) return;
-    const isNowLiked = data as boolean;
-    setLiked(isNowLiked);
-    setLikeCount((prev) => isNowLiked ? prev + 1 : Math.max(0, prev - 1));
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
+  const formatDate = (ts: { seconds: number } | null) => {
+    if (!ts) return '';
+    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+      day: 'numeric', month: 'long', year: 'numeric',
     });
   };
 
@@ -154,40 +126,23 @@ export default function ArticlePage() {
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 lg:p-10">
           <div className="flex items-center gap-2 mb-4 flex-wrap">
-            {article.categories && (
-              <Link
-                to={`/category/${article.categories.slug}`}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
-              >
+            {article.category && (
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <Tag className="w-3 h-3" />
-                {article.categories.name}
-              </Link>
+                {article.category}
+              </span>
             )}
-            <span className="text-xs text-slate-400 flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {formatDate(article.created_at)}
-            </span>
+            {article.created_at && (
+              <span className="text-xs text-slate-400 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {formatDate(article.created_at)}
+              </span>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-6 leading-tight">
             {article.title}
           </h1>
-
-          <div className="flex items-center gap-4 mb-8 pb-6 border-b border-slate-100">
-            <span className="flex items-center gap-1.5 text-sm text-slate-400">
-              <Eye className="w-4 h-4" />
-              {viewCount} просмотров
-            </span>
-            <button
-              onClick={handleLike}
-              className={`flex items-center gap-1.5 text-sm font-medium transition-all duration-200 ${
-                liked ? 'text-rose-500' : 'text-slate-400 hover:text-rose-400'
-              }`}
-            >
-              <Heart className={`w-4 h-4 transition-transform duration-200 ${liked ? 'fill-current scale-110' : ''}`} />
-              {likeCount}
-            </button>
-          </div>
 
           {article.audio_url && (
             <div className="mb-8 bg-emerald-50 border border-emerald-200 rounded-xl p-4">

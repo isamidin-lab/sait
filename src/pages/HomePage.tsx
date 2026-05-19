@@ -1,20 +1,50 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { supabase } from '../lib/supabase';
-import type { Category, QuestionWithAnswer, Product, Article } from '../lib/types';
+import { db } from '../lib/firebase';
 import QuestionCard from '../components/QuestionCard';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
 import { Search, MessageCircle, BookOpen, Filter, GraduationCap, ExternalLink, FileText, ChevronDown, BookOpenCheck } from 'lucide-react';
+import type { Product } from '../lib/types';
 
 const ARTICLES_PAGE_SIZE = 6;
 const QUESTIONS_PAGE_SIZE = 5;
 
+interface FireQuestion {
+  id: string;
+  question_text: string;
+  author_name: string;
+  category: string;
+  status: string;
+  answer_text?: string | null;
+  answer_updated_at?: { seconds: number } | null;
+  created_at?: { seconds: number } | null;
+  likes?: number;
+  views?: number;
+}
+
+interface FireArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  image_url: string | null;
+  video_url: string | null;
+  audio_url: string | null;
+  file_url: string | null;
+  views: number;
+  likes: number;
+  status: string;
+  created_at: { seconds: number } | null;
+}
+
 export default function HomePage() {
-  const [questions, setQuestions] = useState<QuestionWithAnswer[]>([]);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [questions, setQuestions] = useState<FireQuestion[]>([]);
+  const [articles, setArticles] = useState<FireArticle[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -22,41 +52,46 @@ export default function HomePage() {
   const [visibleQuestions, setVisibleQuestions] = useState(QUESTIONS_PAGE_SIZE);
 
   useEffect(() => {
-    fetchCategories();
-    fetchQuestions();
-    fetchArticles();
-    fetchProducts();
+    fetchAll();
   }, []);
 
-  const fetchCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('sort_order');
-    if (data) setCategories(data);
-  };
-
-  const fetchQuestions = async () => {
-    const { data, error } = await supabase
-      .from('questions')
-      .select('*, categories(*), answers(*)')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false });
-
-    if (error) console.error('Error fetching questions:', error);
-    if (data) setQuestions(data as QuestionWithAnswer[]);
+  const fetchAll = async () => {
+    await Promise.all([fetchQuestions(), fetchArticles(), fetchProducts()]);
     setLoading(false);
   };
 
-  const fetchArticles = async () => {
-    const { data, error } = await supabase
-      .from('articles')
-      .select('*, categories(*)')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false });
+  const fetchQuestions = async () => {
+    try {
+      const q = query(
+        collection(db, 'questions'),
+        where('status', '==', 'published'),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+      setQuestions(data);
+      const cats = Array.from(new Set(data.map((q) => q.category).filter(Boolean)));
+      setCategories((prev) => Array.from(new Set([...prev, ...cats])));
+    } catch (err) {
+      console.error('Error fetching questions:', err);
+    }
+  };
 
-    if (error) console.error('Error fetching articles:', error);
-    if (data) setArticles(data as Article[]);
+  const fetchArticles = async () => {
+    try {
+      const q = query(
+        collection(db, 'articles'),
+        where('status', '==', 'published'),
+        orderBy('created_at', 'desc')
+      );
+      const snap = await getDocs(q);
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
+      setArticles(data);
+      const cats = Array.from(new Set(data.map((a) => a.category).filter(Boolean)));
+      setCategories((prev) => Array.from(new Set([...prev, ...cats])));
+    } catch (err) {
+      console.error('Error fetching articles:', err);
+    }
   };
 
   const fetchProducts = async () => {
@@ -70,41 +105,35 @@ export default function HomePage() {
 
   const filteredQuestions = useMemo(() => {
     let result = questions;
-
     if (selectedCategory !== 'all') {
-      result = result.filter((q) => q.category_id === selectedCategory);
+      result = result.filter((q) => q.category === selectedCategory);
     }
-
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(
-        (q) =>
-          q.question_text.toLowerCase().includes(query) ||
-          q.categories?.name.toLowerCase().includes(query) ||
-          q.answers?.some((a) => a.answer_text.toLowerCase().includes(query))
+        (item) =>
+          item.question_text.toLowerCase().includes(q) ||
+          item.category?.toLowerCase().includes(q) ||
+          item.answer_text?.toLowerCase().includes(q)
       );
     }
-
     return result;
   }, [questions, selectedCategory, searchQuery]);
 
   const filteredArticles = useMemo(() => {
     let result = articles;
-
     if (selectedCategory !== 'all') {
-      result = result.filter((a) => a.category_id === selectedCategory);
+      result = result.filter((a) => a.category === selectedCategory);
     }
-
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(
         (a) =>
-          a.title.toLowerCase().includes(query) ||
-          a.content?.toLowerCase().includes(query) ||
-          a.categories?.name.toLowerCase().includes(query)
+          a.title.toLowerCase().includes(q) ||
+          a.content?.toLowerCase().includes(q) ||
+          a.category?.toLowerCase().includes(q)
       );
     }
-
     return result;
   }, [articles, selectedCategory, searchQuery]);
 
@@ -114,15 +143,14 @@ export default function HomePage() {
   const hasMoreQuestions = visibleQuestions < filteredQuestions.length;
   const hasContent = filteredQuestions.length > 0 || filteredArticles.length > 0;
 
-  const handleCategoryChange = (catId: string) => {
-    setSelectedCategory(catId);
+  const handleCategoryChange = (cat: string) => {
+    setSelectedCategory(cat);
     setVisibleArticles(ARTICLES_PAGE_SIZE);
     setVisibleQuestions(QUESTIONS_PAGE_SIZE);
   };
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-500 rounded-full blur-3xl" />
@@ -142,7 +170,6 @@ export default function HomePage() {
             </p>
           </div>
 
-          {/* Search Bar */}
           <div className="max-w-2xl mx-auto">
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -179,7 +206,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Products Section */}
       {products.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex items-center gap-2 mb-6">
@@ -206,18 +232,12 @@ export default function HomePage() {
                   </div>
                 )}
                 <div className="p-5">
-                  <h3 className="text-base font-semibold text-slate-800 mb-1.5 leading-snug">
-                    {product.title}
-                  </h3>
+                  <h3 className="text-base font-semibold text-slate-800 mb-1.5 leading-snug">{product.title}</h3>
                   {product.description && (
-                    <p className="text-sm text-slate-500 leading-relaxed mb-3 line-clamp-3">
-                      {product.description}
-                    </p>
+                    <p className="text-sm text-slate-500 leading-relaxed mb-3 line-clamp-3">{product.description}</p>
                   )}
                   <div className="flex items-center justify-between mt-auto pt-2">
-                    <span className="text-lg font-bold text-emerald-700">
-                      {product.price}
-                    </span>
+                    <span className="text-lg font-bold text-emerald-700">{product.price}</span>
                     <a
                       href={product.action_url}
                       target="_blank"
@@ -235,40 +255,40 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Categories Filter */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-slate-500" />
-          <h2 className="text-lg font-semibold text-slate-700">Категории</h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => handleCategoryChange('all')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-              selectedCategory === 'all'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
-                : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
-            }`}
-          >
-            Все
-          </button>
-          {categories.filter((cat) => cat.slug !== 'general').map((cat) => (
+      {categories.length > 0 && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center gap-2 mb-4">
+            <Filter className="w-5 h-5 text-slate-500" />
+            <h2 className="text-lg font-semibold text-slate-700">Категории</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
             <button
-              key={cat.id}
-              onClick={() => handleCategoryChange(cat.id)}
+              onClick={() => handleCategoryChange('all')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                selectedCategory === cat.id
+                selectedCategory === 'all'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
                   : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
               }`}
             >
-              {cat.name}
+              Все
             </button>
-          ))}
-        </div>
-      </section>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => handleCategoryChange(cat)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  selectedCategory === cat
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
-      {/* Articles Section */}
       {filteredArticles.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
           <div className="flex items-center gap-2 mb-4">
@@ -287,14 +307,13 @@ export default function HomePage() {
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 hover:text-emerald-700 hover:border-emerald-300 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md"
               >
                 <ChevronDown className="w-4 h-4" />
-                Загрузить еще ({filteredArticles.length - visibleArticles} осталось)
+                Загрузить ещё ({filteredArticles.length - visibleArticles} осталось)
               </button>
             </div>
           )}
         </section>
       )}
 
-      {/* Questions List */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
         {filteredQuestions.length > 0 && (
           <div className="flex items-center gap-2 mb-4">
@@ -330,7 +349,7 @@ export default function HomePage() {
                   className="inline-flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 hover:text-emerald-700 hover:border-emerald-300 font-medium rounded-xl transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   <ChevronDown className="w-4 h-4" />
-                  Загрузить еще ({filteredQuestions.length - visibleQuestions} осталось)
+                  Загрузить ещё ({filteredQuestions.length - visibleQuestions} осталось)
                 </button>
               </div>
             )}
