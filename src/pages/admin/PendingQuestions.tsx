@@ -35,15 +35,29 @@ export default function PendingQuestions() {
     if (!answerText.trim() || !user) return;
     setSubmitting(true);
 
-    const { error: answerError } = await supabase.from('answers').upsert(
-      {
+    const { data: existing } = await supabase
+      .from('answers')
+      .select('id')
+      .eq('question_id', questionId)
+      .maybeSingle();
+
+    let answerError;
+    if (existing) {
+      ({ error: answerError } = await supabase
+        .from('answers')
+        .update({
+          answer_text: answerText.trim(),
+          published_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id));
+    } else {
+      ({ error: answerError } = await supabase.from('answers').insert({
         question_id: questionId,
         admin_id: user.id,
         answer_text: answerText.trim(),
         published_at: new Date().toISOString(),
-      },
-      { onConflict: 'question_id' }
-    );
+      }));
+    }
 
     if (answerError) {
       addToast('error', `Ошибка при отправке ответа: ${answerError.message}`);
@@ -57,7 +71,7 @@ export default function PendingQuestions() {
       .eq('id', questionId);
 
     if (statusError) {
-      addToast('error', 'Ошибка при обновлении статуса');
+      addToast('error', `Ошибка при обновлении статуса: ${statusError.message}`);
       setSubmitting(false);
       return;
     }
