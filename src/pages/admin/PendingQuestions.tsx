@@ -35,12 +35,15 @@ export default function PendingQuestions() {
     if (!answerText.trim() || !user) return;
     setSubmitting(true);
 
-    const { error: answerError } = await supabase.from('answers').insert({
-      question_id: questionId,
-      admin_id: user.id,
-      answer_text: answerText.trim(),
-      published_at: new Date().toISOString(),
-    });
+    const { error: answerError } = await supabase.from('answers').upsert(
+      {
+        question_id: questionId,
+        admin_id: user.id,
+        answer_text: answerText.trim(),
+        published_at: new Date().toISOString(),
+      },
+      { onConflict: 'question_id' }
+    );
 
     if (answerError) {
       addToast('error', `Ошибка при отправке ответа: ${answerError.message}`);
