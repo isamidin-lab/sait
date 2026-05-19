@@ -43,7 +43,7 @@ export default function PendingQuestions() {
     });
 
     if (answerError) {
-      addToast('error', 'Ошибка при отправке ответа');
+      addToast('error', `Ошибка при отправке ответа: ${answerError.message}`);
       setSubmitting(false);
       return;
     }

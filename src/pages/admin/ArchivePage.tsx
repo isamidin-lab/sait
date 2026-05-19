@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import type { Question, Answer, Category } from '../../lib/types';
 import Spinner from '../../components/Spinner';
 import {
@@ -30,6 +31,7 @@ export default function ArchivePage() {
   const [editCategory, setEditCategory] = useState('');
   const [saving, setSaving] = useState(false);
   const { addToast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     fetchQuestions();
@@ -94,6 +96,7 @@ export default function ArchivePage() {
       // No answer yet — create one (edge case: published without answer)
       const { error } = await supabase.from('answers').insert({
         question_id: q.id,
+        admin_id: user!.id,
         answer_text: editText.trim(),
         published_at: new Date().toISOString(),
       });
