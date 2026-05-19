@@ -32,8 +32,18 @@ export default function PendingQuestions() {
   };
 
   const handleAnswer = async (questionId: string) => {
-    if (!answerText.trim() || !user) return;
+    if (!answerText.trim()) return;
     setSubmitting(true);
+
+    // Get fresh session to guarantee JWT is active and admin_id is current
+    const { data: { session } } = await supabase.auth.getSession();
+    const adminId = session?.user?.id;
+
+    if (!adminId) {
+      addToast('error', 'Сессия истекла. Пожалуйста, войдите снова.');
+      setSubmitting(false);
+      return;
+    }
 
     const { data: existing } = await supabase
       .from('answers')
@@ -48,12 +58,13 @@ export default function PendingQuestions() {
         .update({
           answer_text: answerText.trim(),
           published_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq('id', existing.id));
     } else {
       ({ error: answerError } = await supabase.from('answers').insert({
         question_id: questionId,
-        admin_id: user.id,
+        admin_id: adminId,
         answer_text: answerText.trim(),
         published_at: new Date().toISOString(),
       }));
