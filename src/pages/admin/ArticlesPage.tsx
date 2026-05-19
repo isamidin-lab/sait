@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  collection, query, getDocs, doc, addDoc, updateDoc, deleteDoc,
-  orderBy, serverTimestamp,
+  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
@@ -60,9 +59,11 @@ export default function ArticlesPage() {
 
   const fetchArticles = async () => {
     try {
-      const q = query(collection(db, 'articles'), orderBy('created_at', 'desc'));
-      const snap = await getDocs(q);
-      setArticles(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle)));
+      const snap = await getDocs(collection(db, 'articles'));
+      const data = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as FireArticle))
+        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
+      setArticles(data);
     } catch (err) {
       console.error('Error fetching articles:', err);
     } finally {

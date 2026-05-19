@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/firebase';
 import QuestionCard from '../components/QuestionCard';
@@ -56,19 +56,22 @@ export default function HomePage() {
   }, []);
 
   const fetchAll = async () => {
-    await Promise.all([fetchQuestions(), fetchArticles(), fetchProducts()]);
-    setLoading(false);
+    try {
+      await Promise.all([fetchQuestions(), fetchArticles(), fetchProducts()]);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const sortByDate = <T extends { created_at?: { seconds: number } | null }>(arr: T[]) =>
+    [...arr].sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
 
   const fetchQuestions = async () => {
     try {
-      const q = query(
-        collection(db, 'questions'),
-        where('status', '==', 'published'),
-        orderBy('created_at', 'desc')
+      const snap = await getDocs(
+        query(collection(db, 'questions'), where('status', '==', 'published'))
       );
-      const snap = await getDocs(q);
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+      const data = sortByDate(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion)));
       setQuestions(data);
       const cats = Array.from(new Set(data.map((q) => q.category).filter(Boolean)));
       setCategories((prev) => Array.from(new Set([...prev, ...cats])));
@@ -79,13 +82,10 @@ export default function HomePage() {
 
   const fetchArticles = async () => {
     try {
-      const q = query(
-        collection(db, 'articles'),
-        where('status', '==', 'published'),
-        orderBy('created_at', 'desc')
+      const snap = await getDocs(
+        query(collection(db, 'articles'), where('status', '==', 'published'))
       );
-      const snap = await getDocs(q);
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
+      const data = sortByDate(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle)));
       setArticles(data);
       const cats = Array.from(new Set(data.map((a) => a.category).filter(Boolean)));
       setCategories((prev) => Array.from(new Set([...prev, ...cats])));

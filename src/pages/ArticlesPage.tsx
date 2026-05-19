@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
@@ -35,13 +35,12 @@ export default function ArticlesPage() {
 
   const fetchArticles = async () => {
     try {
-      const q = query(
-        collection(db, 'articles'),
-        where('status', '==', 'published'),
-        orderBy('created_at', 'desc')
+      const snap = await getDocs(
+        query(collection(db, 'articles'), where('status', '==', 'published'))
       );
-      const snap = await getDocs(q);
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
+      const data = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as FireArticle))
+        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
       setArticles(data);
       setCategories(Array.from(new Set(data.map((a) => a.category).filter(Boolean))));
     } catch (err) {

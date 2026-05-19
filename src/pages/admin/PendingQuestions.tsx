@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
@@ -29,13 +29,12 @@ export default function PendingQuestions() {
 
   const fetchQuestions = async () => {
     try {
-      const q = query(
-        collection(db, 'questions'),
-        where('status', '==', 'pending'),
-        orderBy('created_at', 'desc')
+      const snap = await getDocs(
+        query(collection(db, 'questions'), where('status', '==', 'pending'))
       );
-      const snap = await getDocs(q);
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+      const data = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() } as FireQuestion))
+        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
       setQuestions(data);
     } catch (err) {
       console.error('Error fetching pending questions:', err);
