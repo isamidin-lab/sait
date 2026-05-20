@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface AdminInfo {
@@ -25,6 +25,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function resolveAdmin(email: string): Promise<AdminInfo | null> {
+  if (!supabaseConfigured) return null;
   const { data } = await supabase
     .from('allowed_admin_emails')
     .select('*')
@@ -52,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (s?.user?.email) {
       const info = await resolveAdmin(s.user.email);
       if (!info) {
-        await supabase.auth.signOut();
+        if (supabaseConfigured) await supabase.auth.signOut();
         setUser(null);
         setSession(null);
         setAdminInfo(null);
@@ -66,6 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    if (!supabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       handleSession(s);
     });
@@ -78,13 +84,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (!supabaseConfigured) return { error: 'Authentication is not configured.' };
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     return { error: null };
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    if (supabaseConfigured) await supabase.auth.signOut();
     setAdminInfo(null);
   };
 
