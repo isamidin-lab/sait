@@ -20,6 +20,7 @@ import ProductsPage from './pages/admin/ResourcesPage';
 import WalletsPage from './pages/admin/WalletsPage';
 import AdminArticlesPage from './pages/admin/ArticlesPage';
 import QuranManagementPage from './pages/admin/QuranManagementPage';
+import SocialsPage from './pages/admin/SocialsPage';
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
                 <Route path="categories" element={<CategoriesPage />} />
                 <Route path="resources" element={<ProductsPage />} />
                 <Route path="wallets" element={<WalletsPage />} />
+                <Route path="socials" element={<SocialsPage />} />
                 <Route path="admins" element={<AdminsPage />} />
               </Route>
               <Route

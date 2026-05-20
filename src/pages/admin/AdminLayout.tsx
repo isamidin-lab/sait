@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FileText,
   BookOpen,
+  Share2,
 } from 'lucide-react';
 
 // minRole: 'moderator' = all admins, 'administrator' = admins+owners, 'owner' = owner only
@@ -24,6 +25,7 @@ const allTabs = [
   { path: '/admin/categories', label: 'Категории',                icon: Tags,          minRole: 'administrator' },
   { path: '/admin/resources', label: 'Курсы и реклама',           icon: GraduationCap, minRole: 'administrator' },
   { path: '/admin/wallets',  label: 'Настройки донатов',          icon: Wallet,        minRole: 'administrator' },
+  { path: '/admin/socials', label: 'Социальные сети',             icon: Share2,        minRole: 'administrator' },
   { path: '/admin/admins',   label: 'Доступ и команда',           icon: Users,         minRole: 'owner' },
 ] as const;
 

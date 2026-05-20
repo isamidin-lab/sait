@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { BookOpen, Heart, Send } from 'lucide-react';
 import SupportModal from './SupportModal';
 
@@ -34,39 +36,24 @@ function TikTokIcon() {
   );
 }
 
-const SOCIAL_LINKS = [
-  {
-    name: 'Telegram',
-    href: 'https://t.me/',
-    icon: TelegramIcon,
-    hoverClass: 'hover:bg-sky-500/20 hover:text-sky-400 hover:border-sky-500/40',
-    label: 'sky',
-  },
-  {
-    name: 'Instagram',
-    href: 'https://instagram.com/',
-    icon: InstagramIcon,
-    hoverClass: 'hover:bg-pink-500/20 hover:text-pink-400 hover:border-pink-500/40',
-    label: 'pink',
-  },
-  {
-    name: 'YouTube',
-    href: 'https://youtube.com/',
-    icon: YouTubeIcon,
-    hoverClass: 'hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40',
-    label: 'red',
-  },
-  {
-    name: 'TikTok',
-    href: 'https://tiktok.com/',
-    icon: TikTokIcon,
-    hoverClass: 'hover:bg-slate-400/20 hover:text-slate-200 hover:border-slate-400/40',
-    label: 'slate',
-  },
+const SOCIAL_CONFIG = [
+  { key: 'telegram',  name: 'Telegram',  icon: TelegramIcon,  hoverClass: 'hover:bg-sky-500/20 hover:text-sky-400 hover:border-sky-500/40' },
+  { key: 'instagram', name: 'Instagram', icon: InstagramIcon, hoverClass: 'hover:bg-pink-500/20 hover:text-pink-400 hover:border-pink-500/40' },
+  { key: 'youtube',   name: 'YouTube',   icon: YouTubeIcon,   hoverClass: 'hover:bg-red-500/20 hover:text-red-400 hover:border-red-500/40' },
+  { key: 'tiktok',    name: 'TikTok',    icon: TikTokIcon,    hoverClass: 'hover:bg-slate-400/20 hover:text-slate-200 hover:border-slate-400/40' },
 ];
 
 export default function Footer() {
   const [supportOpen, setSupportOpen] = useState(false);
+  const [socials, setSocials] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'socials')).then((snap) => {
+      if (snap.exists()) setSocials(snap.data() as Record<string, string>);
+    });
+  }, []);
+
+  const activeLinks = SOCIAL_CONFIG.filter(({ key }) => socials[key]);
 
   return (
     <>
@@ -74,28 +61,30 @@ export default function Footer() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
           {/* Social links row */}
-          <div className="py-8 border-b border-slate-800">
-            <div className="flex flex-col items-center gap-4">
-              <p className="text-slate-500 text-xs font-medium uppercase tracking-widest">
-                Мы в социальных сетях
-              </p>
-              <div className="flex items-center gap-3">
-                {SOCIAL_LINKS.map(({ name, href, icon: Icon, hoverClass }) => (
-                  <a
-                    key={name}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={name}
-                    className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-700/60 text-slate-400 bg-slate-800/50 transition-all duration-200 ${hoverClass}`}
-                  >
-                    <Icon />
-                    <span className="text-sm font-medium hidden sm:block">{name}</span>
-                  </a>
-                ))}
+          {activeLinks.length > 0 && (
+            <div className="py-8 border-b border-slate-800">
+              <div className="flex flex-col items-center gap-4">
+                <p className="text-slate-500 text-xs font-medium uppercase tracking-widest">
+                  Мы в социальных сетях
+                </p>
+                <div className="flex items-center gap-3">
+                  {activeLinks.map(({ key, name, icon: Icon, hoverClass }) => (
+                    <a
+                      key={key}
+                      href={socials[key]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={name}
+                      className={`group flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-slate-700/60 text-slate-400 bg-slate-800/50 transition-all duration-200 ${hoverClass}`}
+                    >
+                      <Icon />
+                      <span className="text-sm font-medium hidden sm:block">{name}</span>
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Bottom row */}
           <div className="py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
