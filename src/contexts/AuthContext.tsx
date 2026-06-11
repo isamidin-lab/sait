@@ -1,6 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase, supabaseConfigured } from '../lib/supabase';
-import type { User, Session } from '@supabase/supabase-js';
+import {
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  type User as FirebaseUser,
+} from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { firebaseAuth, db } from '../lib/firebase';
 
 interface AdminInfo {
   id: string;
@@ -11,8 +17,7 @@ interface AdminInfo {
 }
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: FirebaseUser | null;
   adminInfo: AdminInfo | null;
   isAdmin: boolean;
   isOwner: boolean;
@@ -25,73 +30,60 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function resolveAdmin(email: string): Promise<AdminInfo | null> {
-  if (!supabaseConfigured) return null;
-  const { data } = await supabase
-    .from('allowed_admin_emails')
-    .select('*')
-    .eq('email', email)
-    .maybeSingle();
-  if (!data) return null;
-  return {
-    id: data.id,
-    email: data.email,
-    display_name: data.display_name,
-    role: data.role,
-    auth_user_id: data.auth_user_id ?? null,
-  };
+  try {
+    const ref = doc(db, 'admins', email);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return {
+      id: snap.id,
+      email: data.email ?? email,
+      display_name: data.display_name ?? '',
+      role: data.role ?? 'moderator',
+      auth_user_id: data.auth_user_id ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [adminInfo, setAdminInfo] = useState<AdminInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const handleSession = async (s: Session | null) => {
-    setSession(s);
-    setUser(s?.user ?? null);
-    if (s?.user?.email) {
-      const info = await resolveAdmin(s.user.email);
-      if (!info) {
-        if (supabaseConfigured) await supabase.auth.signOut();
-        setUser(null);
-        setSession(null);
-        setAdminInfo(null);
-      } else {
-        setAdminInfo(info);
-      }
-    } else {
-      setAdminInfo(null);
-    }
-    setLoading(false);
-  };
-
   useEffect(() => {
-    if (!supabaseConfigured) {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser?.email) {
+        const info = await resolveAdmin(firebaseUser.email);
+        if (!info) {
+          await firebaseSignOut(firebaseAuth);
+          setUser(null);
+          setAdminInfo(null);
+        } else {
+          setAdminInfo(info);
+        }
+      } else {
+        setAdminInfo(null);
+      }
       setLoading(false);
-      return;
-    }
-
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      handleSession(s);
     });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      (async () => { await handleSession(s); })();
-    });
-
-    return () => subscription.unsubscribe();
+    return unsubscribe;
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    if (!supabaseConfigured) return { error: 'Authentication is not configured.' };
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
-    return { error: null };
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
+      return { error: null };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      return { error: message };
+    }
   };
 
   const signOut = async () => {
-    if (supabaseConfigured) await supabase.auth.signOut();
+    await firebaseSignOut(firebaseAuth);
     setAdminInfo(null);
   };
 
@@ -99,7 +91,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        session,
         adminInfo,
         isAdmin: !!adminInfo,
         isOwner: adminInfo?.role === 'owner',
