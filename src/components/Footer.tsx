@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, firebaseConfigured } from '../lib/firebase';
 import { BookOpen, Heart, Send } from 'lucide-react';
 import SupportModal from './SupportModal';
 
@@ -48,6 +48,7 @@ export default function Footer() {
   const [socials, setSocials] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!firebaseConfigured) return;
     getDoc(doc(db, 'settings', 'socials')).then((snap) => {
       if (snap.exists()) setSocials(snap.data() as Record<string, string>);
     });

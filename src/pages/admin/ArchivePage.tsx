@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, firebaseConfigured } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import {
@@ -52,6 +52,10 @@ export default function ArchivePage() {
   }, []);
 
   const fetchQuestions = async () => {
+    if (!firebaseConfigured) {
+      setLoading(false);
+      return;
+    }
     try {
       const snap = await getDocs(
         query(collection(db, 'questions'), where('status', '==', 'published'))
@@ -80,6 +84,10 @@ export default function ArchivePage() {
   };
 
   const handleSave = async (q: FireQuestion) => {
+    if (!firebaseConfigured) {
+      addToast('error', 'Сервис не подключён');
+      return;
+    }
     if (!editText.trim()) {
       addToast('error', 'Текст ответа не может быть пустым');
       return;
@@ -103,6 +111,10 @@ export default function ArchivePage() {
   };
 
   const handleUnpublish = async (q: FireQuestion) => {
+    if (!firebaseConfigured) {
+      addToast('error', 'Сервис не подключён');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'questions', q.id), {
         status: 'pending',
@@ -117,6 +129,10 @@ export default function ArchivePage() {
   };
 
   const handleDelete = async (q: FireQuestion) => {
+    if (!firebaseConfigured) {
+      addToast('error', 'Сервис не подключён');
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'questions', q.id));
       addToast('info', 'Вопрос удалён');

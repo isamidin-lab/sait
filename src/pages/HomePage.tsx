@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { supabase, supabaseConfigured } from '../lib/supabase';
-import { db } from '../lib/firebase';
+import { db, firebaseConfigured } from '../lib/firebase';
 import QuestionCard from '../components/QuestionCard';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
@@ -67,6 +67,7 @@ export default function HomePage() {
     [...arr].sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
 
   const fetchQuestions = async () => {
+    if (!firebaseConfigured) { setLoading(false); return; }
     try {
       const snap = await getDocs(
         query(collection(db, 'questions'), where('status', '==', 'published'))
@@ -81,6 +82,7 @@ export default function HomePage() {
   };
 
   const fetchArticles = async () => {
+    if (!firebaseConfigured) { setLoading(false); return; }
     try {
       const snap = await getDocs(
         query(collection(db, 'articles'), where('status', '==', 'published'))

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, firebaseConfigured } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import { Save } from 'lucide-react';
 
@@ -19,12 +19,17 @@ export default function SocialsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!firebaseConfigured) return;
     getDoc(doc(db, 'settings', 'socials')).then((snap) => {
       if (snap.exists()) setLinks(snap.data() as Socials);
     });
   }, []);
 
   const handleSave = async () => {
+    if (!firebaseConfigured) {
+      showToast('Сервис не подключён', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await setDoc(doc(db, 'settings', 'socials'), links);

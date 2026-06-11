@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db, firebaseConfigured } from '../lib/firebase';
 import ArticleCard from '../components/ArticleCard';
 import QuestionCard from '../components/QuestionCard';
 import Spinner from '../components/Spinner';
@@ -49,6 +49,7 @@ export default function CategoryPage() {
   }, [slug]);
 
   const fetchData = async () => {
+    if (!firebaseConfigured) { setLoading(false); return; }
     setLoading(true);
     try {
       const [articlesSnap, questionsSnap] = await Promise.all([
