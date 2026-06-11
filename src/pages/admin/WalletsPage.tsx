@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import { Wallet, CreditCard, Save } from 'lucide-react';
@@ -25,6 +25,7 @@ export default function WalletsPage() {
   }, []);
 
   const fetchWallets = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     const { data } = await supabase
       .from('wallet_settings')
       .select('card_number, usdt_trc20, ton_wallet')
@@ -36,6 +37,7 @@ export default function WalletsPage() {
   };
 
   const handleSave = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     setSaving(true);
 
     const { error } = await supabase

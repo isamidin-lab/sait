@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import type { QuranTafsir, QuranAyahTafsir, QuranAyahMedia } from '../lib/types';
 import Spinner from '../components/Spinner';
 import {
@@ -93,6 +93,7 @@ export default function QuranPage() {
   };
 
   const fetchSurahTafsir = async () => {
+    if (!supabaseConfigured) { return; }
     const { data } = await supabase.from('quran_tafsir').select('*');
     if (data) {
       const map: Record<number, QuranTafsir> = {};
@@ -102,6 +103,7 @@ export default function QuranPage() {
   };
 
   const fetchAyahData = async (surahNumber: number) => {
+    if (!supabaseConfigured) { return; }
     const [tafsirRes, mediaRes] = await Promise.all([
       supabase.from('quran_ayah_tafsir').select('*').eq('surah_number', surahNumber),
       supabase.from('quran_ayah_media').select('*').eq('surah_number', surahNumber),

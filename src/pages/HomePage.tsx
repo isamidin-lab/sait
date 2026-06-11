@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import { db } from '../lib/firebase';
 import QuestionCard from '../components/QuestionCard';
 import ArticleCard from '../components/ArticleCard';
@@ -95,6 +95,7 @@ export default function HomePage() {
   };
 
   const fetchProducts = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     const { data } = await supabase
       .from('products')
       .select('*')

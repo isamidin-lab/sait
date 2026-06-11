@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import type { QuranTafsir, QuranAyahTafsir, QuranAyahMedia } from '../../lib/types';
@@ -75,6 +75,7 @@ export default function QuranManagementPage() {
   };
 
   const fetchSurahTafsir = async () => {
+    if (!supabaseConfigured) { return; }
     const { data } = await supabase.from('quran_tafsir').select('*');
     if (data) {
       const map: Record<number, QuranTafsir> = {};
@@ -96,6 +97,7 @@ export default function QuranManagementPage() {
   };
 
   const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
@@ -111,6 +113,7 @@ export default function QuranManagementPage() {
   };
 
   const handleSaveSurah = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     if (!editingSurah) return;
     setSaving(true);
     const surahName = surahs.find((s) => s.number === editingSurah)?.name || '';
@@ -137,6 +140,7 @@ export default function QuranManagementPage() {
   };
 
   const handleDeleteSurah = async (surahNumber: number) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const existing = tafsirMap[surahNumber];
     if (!existing) return;
     const { error } = await supabase.from('quran_tafsir').delete().eq('id', existing.id);
@@ -148,6 +152,7 @@ export default function QuranManagementPage() {
 
   // ─── AYAH TAFSIR ─────────────────────────────────────────────
   const fetchAyahData = async () => {
+    if (!supabaseConfigured) { return; }
     const sn = parseInt(ayahSurahNumber);
     const an = parseInt(ayahNumber);
     if (!sn || !an) return;
@@ -162,6 +167,7 @@ export default function QuranManagementPage() {
   };
 
   const handleAyahAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingAyah(true);
@@ -177,6 +183,7 @@ export default function QuranManagementPage() {
   };
 
   const handleSaveAyahTafsir = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const sn = parseInt(ayahSurahNumber);
     const an = parseInt(ayahNumber);
     if (!sn || !an || !ayahTafsirForm.scholarName.trim() || !ayahTafsirForm.commentary.trim()) return;
@@ -206,6 +213,7 @@ export default function QuranManagementPage() {
   };
 
   const handleDeleteAyahTafsir = async (id: string) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const { error } = await supabase.from('quran_ayah_tafsir').delete().eq('id', id);
     if (error) { addToast('error', 'Ошибка при удалении'); return; }
     addToast('info', 'Тафсир аята удалён');
@@ -213,6 +221,7 @@ export default function QuranManagementPage() {
   };
 
   const handleSaveAyahMedia = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const sn = parseInt(ayahSurahNumber);
     const an = parseInt(ayahNumber);
     if (!sn || !an || !ayahMediaForm.title.trim() || !ayahMediaForm.url.trim()) return;
@@ -234,6 +243,7 @@ export default function QuranManagementPage() {
   };
 
   const handleDeleteAyahMedia = async (id: string) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const { error } = await supabase.from('quran_ayah_media').delete().eq('id', id);
     if (error) { addToast('error', 'Ошибка при удалении'); return; }
     addToast('info', 'Медиа-ссылка удалена');

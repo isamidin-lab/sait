@@ -6,7 +6,7 @@ import {
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { firebaseAuth, db } from '../lib/firebase';
+import { firebaseAuth, db, firebaseConfigured } from '../lib/firebase';
 
 interface AdminInfo {
   id: string;
@@ -30,6 +30,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function resolveAdmin(email: string): Promise<AdminInfo | null> {
+  if (!firebaseConfigured) return null;
   try {
     const ref = doc(db, 'admins', email);
     const snap = await getDoc(ref);
@@ -53,6 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!firebaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser?.email) {
@@ -73,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    if (!firebaseConfigured) return { error: 'Authentication is not configured.' };
     try {
       await signInWithEmailAndPassword(firebaseAuth, email, password);
       return { error: null };
@@ -83,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await firebaseSignOut(firebaseAuth);
+    if (firebaseConfigured) await firebaseSignOut(firebaseAuth);
     setAdminInfo(null);
   };
 

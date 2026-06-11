@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import type { Product } from '../../lib/types';
 import Spinner from '../../components/Spinner';
@@ -29,6 +29,7 @@ export default function ProductsPage() {
   }, []);
 
   const fetchProducts = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     const { data } = await supabase.from('products').select('*').order('sort_order');
     if (data) setProducts(data);
     setLoading(false);
@@ -44,6 +45,7 @@ export default function ProductsPage() {
   };
 
   const handleAdd = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     if (!form.title.trim() || !form.price.trim()) return;
     setSaving(true);
 
@@ -86,6 +88,7 @@ export default function ProductsPage() {
   };
 
   const handleUpdate = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     if (!editingId || !form.title.trim() || !form.price.trim()) return;
     setSaving(true);
 
@@ -116,6 +119,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const { error } = await supabase.from('products').delete().eq('id', id);
     if (error) {
       addToast('error', 'Ошибка при удалении продукта');
@@ -126,6 +130,7 @@ export default function ProductsPage() {
   };
 
   const handleToggleActive = async (product: Product) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const { error } = await supabase
       .from('products')
       .update({ is_active: !product.is_active })

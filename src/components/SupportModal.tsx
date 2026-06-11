@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import { X, Heart, Copy, Check, Wallet, CreditCard } from 'lucide-react';
 
 interface WalletData {
@@ -56,6 +56,7 @@ export default function SupportModal({ open, onClose }: Props) {
   }, [open]);
 
   const fetchWallets = async () => {
+    if (!supabaseConfigured) { return; }
     const { data } = await supabase
       .from('wallet_settings')
       .select('card_number, usdt_trc20, ton_wallet')

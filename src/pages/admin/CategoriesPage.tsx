@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import type { Category } from '../../lib/types';
 import Spinner from '../../components/Spinner';
@@ -25,6 +25,7 @@ export default function CategoriesPage() {
   }, []);
 
   const fetchCategories = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     const { data } = await supabase.from('categories').select('*').order('sort_order');
     if (data) setCategories(data);
     setLoading(false);
@@ -49,6 +50,7 @@ export default function CategoriesPage() {
   };
 
   const handleAdd = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     if (!form.name.trim()) return;
     setSaving(true);
 
@@ -84,6 +86,7 @@ export default function CategoriesPage() {
   };
 
   const handleUpdate = async () => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     if (!editingId || !form.name.trim()) return;
     setSaving(true);
 
@@ -111,6 +114,7 @@ export default function CategoriesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!supabaseConfigured) { addToast('error', 'База данных не подключена'); return; }
     const { error } = await supabase.from('categories').delete().eq('id', id);
     if (error) {
       addToast('error', 'Невозможно удалить категорию, содержащую вопросы');
