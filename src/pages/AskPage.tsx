@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, firebaseConfigured } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Send, ArrowLeft, MessageCircle } from 'lucide-react';
@@ -47,8 +47,6 @@ export default function AskPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-
-    if (!firebaseConfigured) { addToast('error', 'Сервис не подключён'); return; }
 
     setLoading(true);
     try {

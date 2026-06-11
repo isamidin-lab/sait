@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db, firebaseConfigured } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import { Clock, Tag, User, Send, Trash2, X } from 'lucide-react';
@@ -28,10 +28,6 @@ export default function PendingQuestions() {
   }, []);
 
   const fetchQuestions = async () => {
-    if (!firebaseConfigured) {
-      setLoading(false);
-      return;
-    }
     try {
       const snap = await getDocs(
         query(collection(db, 'questions'), where('status', '==', 'pending'))
@@ -48,10 +44,6 @@ export default function PendingQuestions() {
   };
 
   const handleAnswer = async (questionId: string) => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     if (!answerText.trim()) return;
     setSubmitting(true);
 
@@ -74,10 +66,6 @@ export default function PendingQuestions() {
   };
 
   const handleReject = async (questionId: string) => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     try {
       await updateDoc(doc(db, 'questions', questionId), { status: 'rejected' });
       addToast('info', 'Вопрос отклонён');
@@ -88,10 +76,6 @@ export default function PendingQuestions() {
   };
 
   const handleDelete = async (questionId: string) => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     try {
       await deleteDoc(doc(db, 'questions', questionId));
       addToast('info', 'Вопрос удалён');

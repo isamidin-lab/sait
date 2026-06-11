@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db, firebaseConfigured } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
 import { FileText, Filter, Headphones, ChevronDown } from 'lucide-react';
@@ -34,7 +34,6 @@ export default function ArticlesPage() {
   }, []);
 
   const fetchArticles = async () => {
-    if (!firebaseConfigured) { setLoading(false); return; }
     try {
       const snap = await getDocs(
         query(collection(db, 'articles'), where('status', '==', 'published'))

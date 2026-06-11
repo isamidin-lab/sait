@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
-import { db, firebaseConfigured } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import Spinner from '../components/Spinner';
 import { ArrowLeft, Calendar, Tag, Headphones, Download, Play, BookOpen } from 'lucide-react';
 
@@ -57,7 +57,6 @@ export default function ArticlePage() {
   }, [id]);
 
   const fetchArticle = async () => {
-    if (!firebaseConfigured) { setLoading(false); return; }
     try {
       const snap = await getDoc(doc(db, 'articles', id!));
       if (snap.exists()) {

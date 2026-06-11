@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db, firebaseConfigured } from '../../lib/firebase';
+import { db } from '../../lib/firebase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import {
@@ -58,10 +58,6 @@ export default function ArticlesPage() {
   }, []);
 
   const fetchArticles = async () => {
-    if (!firebaseConfigured) {
-      setLoading(false);
-      return;
-    }
     try {
       const snap = await getDocs(collection(db, 'articles'));
       const data = snap.docs
@@ -97,10 +93,6 @@ export default function ArticlesPage() {
   };
 
   const handleAdd = async () => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     if (!form.title.trim() || !form.category) return;
     setSaving(true);
     try {
@@ -144,10 +136,6 @@ export default function ArticlesPage() {
   };
 
   const handleUpdate = async () => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     if (!editingId || !form.title.trim() || !form.category) return;
     setSaving(true);
     try {
@@ -173,10 +161,6 @@ export default function ArticlesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     try {
       await deleteDoc(doc(db, 'articles', id));
       addToast('info', 'Статья удалена');
@@ -187,10 +171,6 @@ export default function ArticlesPage() {
   };
 
   const handleToggleStatus = async (article: FireArticle) => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Сервис не подключён');
-      return;
-    }
     const newStatus = article.status === 'published' ? 'draft' : 'published';
     try {
       await updateDoc(doc(db, 'articles', article.id), { status: newStatus, updated_at: serverTimestamp() });
