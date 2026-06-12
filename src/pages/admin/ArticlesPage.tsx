@@ -7,14 +7,11 @@ import {
   Eye, EyeOff, Image, Video, BookOpen, Headphones, Bold, Italic, Heading2, List,
 } from 'lucide-react';
 
-const CATEGORIES = [
-  'Акыда',
-  'Фикх',
-  'Коран и тафсир',
-  'История ислама',
-  'Нравственность и воспитание',
-  'Другое',
-];
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 interface Article {
   id: string;
@@ -39,9 +36,11 @@ export default function ArticlesPage() {
   const [saving, setSaving] = useState(false);
   const { addToast } = useToast();
 
+  const [categories, setCategories] = useState<Category[]>([]);
   const [form, setForm] = useState({
     title: '',
-    category: CATEGORIES[0],
+    categoryId: '',
+    category: '',
     content: '',
     imageUrl: '',
     videoUrl: '',
@@ -52,7 +51,17 @@ export default function ArticlesPage() {
 
   useEffect(() => {
     fetchArticles();
+    fetchCategories();
   }, []);
+
+  const fetchCategories = async () => {
+    if (!supabaseConfigured) return;
+    const { data } = await supabase.from('categories').select('id, name, slug').neq('slug', 'general').order('name');
+    if (data && data.length > 0) {
+      setCategories(data);
+      setForm((prev) => ({ ...prev, categoryId: data[0].id, category: data[0].name }));
+    }
+  };
 
   const fetchArticles = async () => {
     if (!supabaseConfigured) {
@@ -75,7 +84,17 @@ export default function ArticlesPage() {
   };
 
   const resetForm = () => {
-    setForm({ title: '', category: CATEGORIES[0], content: '', imageUrl: '', videoUrl: '', audioUrl: '', fileUrl: '', status: 'published' });
+    setForm({
+      title: '',
+      categoryId: categories[0]?.id || '',
+      category: categories[0]?.name || '',
+      content: '',
+      imageUrl: '',
+      videoUrl: '',
+      audioUrl: '',
+      fileUrl: '',
+      status: 'published',
+    });
     setEditingId(null);
     setShowForm(false);
   };
@@ -96,15 +115,17 @@ export default function ArticlesPage() {
   };
 
   const handleAdd = async () => {
-    if (!form.title.trim() || !form.category) return;
+    if (!form.title.trim() || !form.categoryId) return;
     if (!supabaseConfigured) {
       addToast('error', 'Supabase is not configured');
       return;
     }
     setSaving(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('articles').insert({
         title: form.title.trim(),
+        category_id: form.categoryId,
         category: form.category,
         content: form.content.trim(),
         image_url: form.imageUrl.trim() || null,
@@ -112,6 +133,7 @@ export default function ArticlesPage() {
         audio_url: form.audioUrl.trim() || null,
         file_url: form.fileUrl.trim() || null,
         status: form.status,
+        admin_id: user?.id,
         views: 0,
         likes: 0,
         created_at: new Date().toISOString(),
@@ -133,6 +155,7 @@ export default function ArticlesPage() {
     setEditingId(article.id);
     setForm({
       title: article.title,
+      categoryId: categories.find((c) => c.name === article.category)?.id || '',
       category: article.category,
       content: article.content,
       imageUrl: article.image_url || '',
@@ -145,7 +168,7 @@ export default function ArticlesPage() {
   };
 
   const handleUpdate = async () => {
-    if (!editingId || !form.title.trim() || !form.category) return;
+    if (!editingId || !form.title.trim() || !form.categoryId) return;
     if (!supabaseConfigured) {
       addToast('error', 'Supabase is not configured');
       return;
@@ -156,6 +179,7 @@ export default function ArticlesPage() {
         .from('articles')
         .update({
           title: form.title.trim(),
+          category_id: form.categoryId,
           category: form.category,
           content: form.content.trim(),
           image_url: form.imageUrl.trim() || null,
@@ -242,7 +266,7 @@ export default function ArticlesPage() {
         <button
           onClick={() => {
             if (showForm && editingId) { resetForm(); }
-            else { setShowForm(!showForm); setEditingId(null); setForm({ title: '', category: CATEGORIES[0], content: '', imageUrl: '', videoUrl: '', audioUrl: '', fileUrl: '', status: 'published' }); }
+            else { setShowForm(!showForm); setEditingId(null); setForm({ title: '', categoryId: categories[0]?.id || '', category: categories[0]?.name || '', content: '', imageUrl: '', videoUrl: '', audioUrl: '', fileUrl: '', status: 'published' }); }
           }}
           className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
         >
@@ -271,12 +295,15 @@ export default function ArticlesPage() {
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Категория</label>
               <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                value={form.categoryId}
+                onChange={(e) => {
+                  const cat = categories.find((c) => c.id === e.target.value);
+                  setForm({ ...form, categoryId: e.target.value, category: cat?.name || '' });
+                }}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white"
               >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
             </div>
@@ -381,7 +408,7 @@ export default function ArticlesPage() {
             <div className="flex items-center gap-2 pt-2">
               <button
                 onClick={editingId ? handleUpdate : handleAdd}
-                disabled={saving || !form.title.trim() || !form.category}
+                disabled={saving || !form.title.trim() || !form.categoryId}
                 className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {saving ? <Spinner className="w-4 h-4" /> : <Save className="w-4 h-4" />}
