@@ -1,32 +1,45 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Send, ArrowLeft, MessageCircle } from 'lucide-react';
 
-const CATEGORIES = [
-  'Акыда',
-  'Фикх',
-  'Коран и тафсир',
-  'История ислама',
-  'Нравственность и воспитание',
-  'Другое',
-];
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 export default function AskPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
   const { addToast } = useToast();
 
   const [form, setForm] = useState({
     authorName: '',
     authorEmail: '',
-    category: CATEGORIES[0],
+    categoryId: '',
     questionText: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+    supabase
+      .from('categories')
+      .select('id, name, slug')
+      .neq('slug', 'general')
+      .order('name')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setCategories(data);
+          setForm((prev) => ({ ...prev, categoryId: data[0].id }));
+        }
+      });
+  }, []);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -51,18 +64,19 @@ export default function AskPage() {
       return;
     }
 
+    const selectedCat = categories.find((c) => c.id === form.categoryId);
+
     setLoading(true);
     try {
-      await supabase.from('questions').insert({
+      const { error } = await supabase.from('questions').insert({
         author_name: form.authorName.trim(),
         author_email: form.authorEmail.trim() || null,
-        category: form.category,
+        category_id: form.categoryId,
+        category: selectedCat?.name || 'Другое',
         question_text: form.questionText.trim(),
         status: 'pending',
-        answer_text: null,
-        answer_updated_at: null,
-        created_at: new Date().toISOString(),
       });
+      if (error) throw error;
       setSubmitted(true);
       addToast('success', 'Ваш вопрос успешно отправлен и находится на рассмотрении у администрации');
     } catch {
@@ -94,7 +108,7 @@ export default function AskPage() {
             <button
               onClick={() => {
                 setSubmitted(false);
-                setForm({ authorName: '', authorEmail: '', category: CATEGORIES[0], questionText: '' });
+                setForm({ authorName: '', authorEmail: '', categoryId: categories[0]?.id || '', questionText: '' });
                 setErrors({});
               }}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-medium rounded-xl hover:bg-slate-50 transition-colors"
@@ -170,12 +184,12 @@ export default function AskPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">Категория</label>
               <select
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                value={form.categoryId}
+                onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all bg-white"
               >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
             </div>

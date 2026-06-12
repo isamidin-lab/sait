@@ -50,11 +50,11 @@ export default function Footer() {
     if (!supabaseConfigured) return;
     supabase
       .from('settings')
-      .select('socials')
-      .eq('id', 'socials')
+      .select('value')
+      .eq('key', 'socials')
       .single()
       .then(({ data }) => {
-        if (data && data.socials) setSocials(data.socials as Record<string, string>);
+        if (data && data.value) setSocials(data.value as Record<string, string>);
       })
       .catch((err) => console.error('Error fetching socials:', err));
   }, []);

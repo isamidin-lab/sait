@@ -13,7 +13,7 @@ const FIELDS = [
 type Socials = Record<string, string>;
 
 export default function SocialsPage() {
-  const { showToast } = useToast();
+  const { addToast } = useToast();
   const [links, setLinks] = useState<Socials>({ telegram: '', instagram: '', youtube: '', tiktok: '' });
   const [saving, setSaving] = useState(false);
 
@@ -42,7 +42,7 @@ export default function SocialsPage() {
   const handleSave = async () => {
     setSaving(true);
     if (!supabaseConfigured) {
-      showToast('Supabase is not configured', 'error');
+      addToast('error', 'Supabase is not configured');
       setSaving(false);
       return;
     }
@@ -52,9 +52,9 @@ export default function SocialsPage() {
         .upsert({ key: 'socials', value: links }, { onConflict: 'key' });
 
       if (error) throw error;
-      showToast('Ссылки сохранены', 'success');
+      addToast('success', 'Ссылки сохранены');
     } catch {
-      showToast('Ошибка при сохранении', 'error');
+      addToast('error', 'Ошибка при сохранении');
     } finally {
       setSaving(false);
     }

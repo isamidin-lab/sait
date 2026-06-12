@@ -37,11 +37,8 @@ export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
   const [articles, setArticles] = useState<Article[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [categoryName, setCategoryName] = useState('');
   const [loading, setLoading] = useState(true);
-
-  const categoryName = slug
-    ? slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-    : '';
 
   useEffect(() => {
     if (slug) fetchData();
@@ -51,6 +48,16 @@ export default function CategoryPage() {
     if (!supabaseConfigured) { setLoading(false); return; }
     setLoading(true);
     try {
+      // Look up the category name from the slug
+      const { data: catData } = await supabase
+        .from('categories')
+        .select('name')
+        .eq('slug', slug!)
+        .maybeSingle();
+
+      const catName = catData?.name || '';
+      setCategoryName(catName);
+
       const [articlesRes, questionsRes] = await Promise.all([
         supabase
           .from('articles')
@@ -67,9 +74,10 @@ export default function CategoryPage() {
       const allArticles = (articlesRes.data ?? []) as Article[];
       const allQuestions = (questionsRes.data ?? []) as Question[];
 
-      const normalizedSlug = slug!.toLowerCase().replace(/-/g, ' ');
-      setArticles(allArticles.filter((a) => a.category?.toLowerCase() === normalizedSlug));
-      setQuestions(allQuestions.filter((q) => q.category?.toLowerCase() === normalizedSlug));
+      if (catName) {
+        setArticles(allArticles.filter((a) => a.category === catName));
+        setQuestions(allQuestions.filter((q) => q.category === catName));
+      }
     } catch (err) {
       console.error('Error fetching category data:', err);
     } finally {
@@ -103,7 +111,7 @@ export default function CategoryPage() {
             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
               <Tag className="w-5 h-5 text-emerald-600" />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">{categoryName}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">{categoryName || slug}</h1>
           </div>
         </div>
 

@@ -1,30 +1,30 @@
 import { useState } from 'react';
 import { Calendar, User, Tag, Heart, ChevronDown, ChevronUp, MessageSquare, CheckCircle } from 'lucide-react';
 
-interface FireQuestion {
+interface Question {
   id: string;
   question_text: string;
   author_name: string;
   category: string;
   status: string;
   answer_text?: string | null;
-  answer_updated_at?: { seconds: number } | null;
-  created_at?: { seconds: number } | null;
+  answer_updated_at?: string | null;
+  created_at?: string | null;
   likes?: number;
   views?: number;
 }
 
 interface Props {
-  question: FireQuestion;
+  question: Question;
 }
 
 export default function QuestionCard({ question }: Props) {
   const [expanded, setExpanded] = useState(false);
   const hasAnswer = !!question.answer_text;
 
-  const formatDate = (ts?: { seconds: number } | null) => {
+  const formatDate = (ts?: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
   };

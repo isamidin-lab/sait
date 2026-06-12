@@ -56,16 +56,30 @@ export default function PendingQuestions() {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase
+      const now = new Date().toISOString();
+
+      // Update questions table (denormalized for fast reads)
+      const { error: qErr } = await supabase
         .from('questions')
         .update({
           answer_text: answerText.trim(),
           status: 'published',
-          answer_updated_at: new Date().toISOString(),
+          answer_updated_at: now,
         })
         .eq('id', questionId);
+      if (qErr) throw qErr;
 
-      if (error) throw error;
+      // Also insert into answers table (normalized for history)
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('answers').insert({
+        question_id: questionId,
+        admin_id: user?.id,
+        answer_text: answerText.trim(),
+        published_at: now,
+        created_at: now,
+        updated_at: now,
+      });
+
       addToast('success', 'Ответ опубликован');
       setAnsweringId(null);
       setAnswerText('');
