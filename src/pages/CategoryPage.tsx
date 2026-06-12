@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import ArticleCard from '../components/ArticleCard';
 import QuestionCard from '../components/QuestionCard';
 import Spinner from '../components/Spinner';
 import { ArrowLeft, Tag, FileText, MessageCircle } from 'lucide-react';
 
-interface FireArticle {
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -19,25 +18,25 @@ interface FireArticle {
   views: number;
   likes: number;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
-interface FireQuestion {
+interface Question {
   id: string;
   question_text: string;
   author_name: string;
   category: string;
   status: string;
   answer_text?: string | null;
-  answer_updated_at?: { seconds: number } | null;
-  created_at?: { seconds: number } | null;
+  answer_updated_at?: string | null;
+  created_at?: string | null;
   likes?: number;
 }
 
 export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
-  const [articles, setArticles] = useState<FireArticle[]>([]);
-  const [questions, setQuestions] = useState<FireQuestion[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
 
   const categoryName = slug
@@ -49,23 +48,24 @@ export default function CategoryPage() {
   }, [slug]);
 
   const fetchData = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [articlesSnap, questionsSnap] = await Promise.all([
-        getDocs(query(
-          collection(db, 'articles'),
-          where('status', '==', 'published'),
-          orderBy('created_at', 'desc')
-        )),
-        getDocs(query(
-          collection(db, 'questions'),
-          where('status', '==', 'published'),
-          orderBy('created_at', 'desc')
-        )),
+      const [articlesRes, questionsRes] = await Promise.all([
+        supabase
+          .from('articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('questions')
+          .select('*')
+          .eq('status', 'published')
+          .order('created_at', { ascending: false }),
       ]);
 
-      const allArticles = articlesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle));
-      const allQuestions = questionsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion));
+      const allArticles = (articlesRes.data ?? []) as Article[];
+      const allQuestions = (questionsRes.data ?? []) as Question[];
 
       const normalizedSlug = slug!.toLowerCase().replace(/-/g, ' ');
       setArticles(allArticles.filter((a) => a.category?.toLowerCase() === normalizedSlug));

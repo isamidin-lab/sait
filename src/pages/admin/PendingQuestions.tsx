@@ -1,22 +1,21 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import { Clock, Tag, User, Send, Trash2, X } from 'lucide-react';
 
-interface FireQuestion {
+interface Question {
   id: string;
   question_text: string;
   author_name: string;
   author_email: string | null;
   category: string;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 export default function PendingQuestions() {
-  const [questions, setQuestions] = useState<FireQuestion[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [answeringId, setAnsweringId] = useState<string | null>(null);
   const [answerText, setAnswerText] = useState('');
@@ -28,14 +27,19 @@ export default function PendingQuestions() {
   }, []);
 
   const fetchQuestions = async () => {
+    if (!supabaseConfigured) {
+      setLoading(false);
+      return;
+    }
     try {
-      const snap = await getDocs(
-        query(collection(db, 'questions'), where('status', '==', 'pending'))
-      );
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as FireQuestion))
-        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
-      setQuestions(data);
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setQuestions((data || []) as Question[]);
     } catch (err) {
       console.error('Error fetching pending questions:', err);
     } finally {
@@ -45,14 +49,23 @@ export default function PendingQuestions() {
 
   const handleAnswer = async (questionId: string) => {
     if (!answerText.trim()) return;
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     setSubmitting(true);
 
     try {
-      await updateDoc(doc(db, 'questions', questionId), {
-        answer_text: answerText.trim(),
-        status: 'published',
-        answer_updated_at: serverTimestamp(),
-      });
+      const { error } = await supabase
+        .from('questions')
+        .update({
+          answer_text: answerText.trim(),
+          status: 'published',
+          answer_updated_at: new Date().toISOString(),
+        })
+        .eq('id', questionId);
+
+      if (error) throw error;
       addToast('success', 'Ответ опубликован');
       setAnsweringId(null);
       setAnswerText('');
@@ -66,8 +79,17 @@ export default function PendingQuestions() {
   };
 
   const handleReject = async (questionId: string) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await updateDoc(doc(db, 'questions', questionId), { status: 'rejected' });
+      const { error } = await supabase
+        .from('questions')
+        .update({ status: 'rejected' })
+        .eq('id', questionId);
+
+      if (error) throw error;
       addToast('info', 'Вопрос отклонён');
       fetchQuestions();
     } catch {
@@ -76,8 +98,17 @@ export default function PendingQuestions() {
   };
 
   const handleDelete = async (questionId: string) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await deleteDoc(doc(db, 'questions', questionId));
+      const { error } = await supabase
+        .from('questions')
+        .delete()
+        .eq('id', questionId);
+
+      if (error) throw error;
       addToast('info', 'Вопрос удалён');
       fetchQuestions();
     } catch {
@@ -85,9 +116,9 @@ export default function PendingQuestions() {
     }
   };
 
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',

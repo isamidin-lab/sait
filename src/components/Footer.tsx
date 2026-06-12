@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import { BookOpen, Heart, Send } from 'lucide-react';
 import SupportModal from './SupportModal';
 
@@ -48,9 +47,16 @@ export default function Footer() {
   const [socials, setSocials] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'socials')).then((snap) => {
-      if (snap.exists()) setSocials(snap.data() as Record<string, string>);
-    });
+    if (!supabaseConfigured) return;
+    supabase
+      .from('settings')
+      .select('socials')
+      .eq('id', 'socials')
+      .single()
+      .then(({ data }) => {
+        if (data && data.socials) setSocials(data.socials as Record<string, string>);
+      })
+      .catch((err) => console.error('Error fetching socials:', err));
   }, []);
 
   const activeLinks = SOCIAL_CONFIG.filter(({ key }) => socials[key]);

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 import Spinner from '../components/Spinner';
 import { Send, ArrowLeft, MessageCircle } from 'lucide-react';
@@ -47,10 +46,14 @@ export default function AskPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    if (!supabaseConfigured) {
+      addToast('error', 'Сервис недоступен. Попробуйте позже.');
+      return;
+    }
 
     setLoading(true);
     try {
-      await addDoc(collection(db, 'questions'), {
+      await supabase.from('questions').insert({
         author_name: form.authorName.trim(),
         author_email: form.authorEmail.trim() || null,
         category: form.category,
@@ -58,7 +61,7 @@ export default function AskPage() {
         status: 'pending',
         answer_text: null,
         answer_updated_at: null,
-        created_at: serverTimestamp(),
+        created_at: new Date().toISOString(),
       });
       setSubmitted(true);
       addToast('success', 'Ваш вопрос успешно отправлен и находится на рассмотрении у администрации');

@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react';
-import {
-  collection, getDocs, doc, addDoc, updateDoc, deleteDoc, serverTimestamp,
-} from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import {
@@ -19,7 +16,7 @@ const CATEGORIES = [
   'Другое',
 ];
 
-interface FireArticle {
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -31,11 +28,11 @@ interface FireArticle {
   status: 'draft' | 'published';
   views: number;
   likes: number;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 export default function ArticlesPage() {
-  const [articles, setArticles] = useState<FireArticle[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -58,12 +55,18 @@ export default function ArticlesPage() {
   }, []);
 
   const fetchArticles = async () => {
+    if (!supabaseConfigured) {
+      setLoading(false);
+      return;
+    }
     try {
-      const snap = await getDocs(collection(db, 'articles'));
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as FireArticle))
-        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
-      setArticles(data);
+      const { data, error } = await supabase
+        .from('articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setArticles((data || []) as Article[]);
     } catch (err) {
       console.error('Error fetching articles:', err);
     } finally {
@@ -94,9 +97,13 @@ export default function ArticlesPage() {
 
   const handleAdd = async () => {
     if (!form.title.trim() || !form.category) return;
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     setSaving(true);
     try {
-      await addDoc(collection(db, 'articles'), {
+      const { error } = await supabase.from('articles').insert({
         title: form.title.trim(),
         category: form.category,
         content: form.content.trim(),
@@ -107,9 +114,11 @@ export default function ArticlesPage() {
         status: form.status,
         views: 0,
         likes: 0,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       });
+
+      if (error) throw error;
       addToast('success', 'Статья опубликована');
       resetForm();
       fetchArticles();
@@ -120,7 +129,7 @@ export default function ArticlesPage() {
     }
   };
 
-  const handleEdit = (article: FireArticle) => {
+  const handleEdit = (article: Article) => {
     setEditingId(article.id);
     setForm({
       title: article.title,
@@ -137,19 +146,28 @@ export default function ArticlesPage() {
 
   const handleUpdate = async () => {
     if (!editingId || !form.title.trim() || !form.category) return;
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'articles', editingId), {
-        title: form.title.trim(),
-        category: form.category,
-        content: form.content.trim(),
-        image_url: form.imageUrl.trim() || null,
-        video_url: form.videoUrl.trim() || null,
-        audio_url: form.audioUrl.trim() || null,
-        file_url: form.fileUrl.trim() || null,
-        status: form.status,
-        updated_at: serverTimestamp(),
-      });
+      const { error } = await supabase
+        .from('articles')
+        .update({
+          title: form.title.trim(),
+          category: form.category,
+          content: form.content.trim(),
+          image_url: form.imageUrl.trim() || null,
+          video_url: form.videoUrl.trim() || null,
+          audio_url: form.audioUrl.trim() || null,
+          file_url: form.fileUrl.trim() || null,
+          status: form.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingId);
+
+      if (error) throw error;
       addToast('success', 'Статья обновлена');
       resetForm();
       fetchArticles();
@@ -161,8 +179,14 @@ export default function ArticlesPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await deleteDoc(doc(db, 'articles', id));
+      const { error } = await supabase.from('articles').delete().eq('id', id);
+
+      if (error) throw error;
       addToast('info', 'Статья удалена');
       fetchArticles();
     } catch {
@@ -170,10 +194,19 @@ export default function ArticlesPage() {
     }
   };
 
-  const handleToggleStatus = async (article: FireArticle) => {
+  const handleToggleStatus = async (article: Article) => {
     const newStatus = article.status === 'published' ? 'draft' : 'published';
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await updateDoc(doc(db, 'articles', article.id), { status: newStatus, updated_at: serverTimestamp() });
+      const { error } = await supabase
+        .from('articles')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', article.id);
+
+      if (error) throw error;
       addToast('success', newStatus === 'published' ? 'Статья опубликована' : 'Статья скрыта');
       fetchArticles();
     } catch {
@@ -181,9 +214,9 @@ export default function ArticlesPage() {
     }
   };
 
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
   };

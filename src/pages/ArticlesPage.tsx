@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
 import { FileText, Filter, Headphones, ChevronDown } from 'lucide-react';
 
 const PAGE_SIZE = 9;
 
-interface FireArticle {
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -19,11 +18,11 @@ interface FireArticle {
   views: number;
   likes: number;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 export default function ArticlesPage() {
-  const [articles, setArticles] = useState<FireArticle[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -34,15 +33,16 @@ export default function ArticlesPage() {
   }, []);
 
   const fetchArticles = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     try {
-      const snap = await getDocs(
-        query(collection(db, 'articles'), where('status', '==', 'published'))
-      );
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as FireArticle))
-        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
-      setArticles(data);
-      setCategories(Array.from(new Set(data.map((a) => a.category).filter(Boolean))));
+      const { data } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('status', 'published')
+        .order('created_at', { ascending: false });
+      const articles = (data ?? []) as Article[];
+      setArticles(articles);
+      setCategories(Array.from(new Set(articles.map((a) => a.category).filter(Boolean))));
     } catch (err) {
       console.error('Error fetching articles:', err);
     } finally {
@@ -64,9 +64,9 @@ export default function ArticlesPage() {
     setVisibleCount(PAGE_SIZE);
   };
 
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
   };

@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, query, where, getDocs } from 'firebase/firestore';
 import { supabase, supabaseConfigured } from '../lib/supabase';
-import { db } from '../lib/firebase';
 import QuestionCard from '../components/QuestionCard';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
@@ -12,20 +10,20 @@ import type { Product } from '../lib/types';
 const ARTICLES_PAGE_SIZE = 6;
 const QUESTIONS_PAGE_SIZE = 5;
 
-interface FireQuestion {
+interface Question {
   id: string;
   question_text: string;
   author_name: string;
   category: string;
   status: string;
   answer_text?: string | null;
-  answer_updated_at?: { seconds: number } | null;
-  created_at?: { seconds: number } | null;
+  answer_updated_at?: string | null;
+  created_at?: string | null;
   likes?: number;
   views?: number;
 }
 
-interface FireArticle {
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -37,12 +35,12 @@ interface FireArticle {
   views: number;
   likes: number;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 export default function HomePage() {
-  const [questions, setQuestions] = useState<FireQuestion[]>([]);
-  const [articles, setArticles] = useState<FireArticle[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,17 +61,19 @@ export default function HomePage() {
     }
   };
 
-  const sortByDate = <T extends { created_at?: { seconds: number } | null }>(arr: T[]) =>
-    [...arr].sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
+  const sortByDate = <T extends { created_at?: string | null }>(arr: T[]) =>
+    [...arr].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
 
   const fetchQuestions = async () => {
+    if (!supabaseConfigured) return;
     try {
-      const snap = await getDocs(
-        query(collection(db, 'questions'), where('status', '==', 'published'))
-      );
-      const data = sortByDate(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireQuestion)));
-      setQuestions(data);
-      const cats = Array.from(new Set(data.map((q) => q.category).filter(Boolean)));
+      const { data } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('status', 'published');
+      const sortedData = sortByDate((data ?? []) as Question[]);
+      setQuestions(sortedData);
+      const cats = Array.from(new Set(sortedData.map((q) => q.category).filter(Boolean)));
       setCategories((prev) => Array.from(new Set([...prev, ...cats])));
     } catch (err) {
       console.error('Error fetching questions:', err);
@@ -81,13 +81,15 @@ export default function HomePage() {
   };
 
   const fetchArticles = async () => {
+    if (!supabaseConfigured) return;
     try {
-      const snap = await getDocs(
-        query(collection(db, 'articles'), where('status', '==', 'published'))
-      );
-      const data = sortByDate(snap.docs.map((d) => ({ id: d.id, ...d.data() } as FireArticle)));
-      setArticles(data);
-      const cats = Array.from(new Set(data.map((a) => a.category).filter(Boolean)));
+      const { data } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('status', 'published');
+      const sortedData = sortByDate((data ?? []) as Article[]);
+      setArticles(sortedData);
+      const cats = Array.from(new Set(sortedData.map((a) => a.category).filter(Boolean)));
       setCategories((prev) => Array.from(new Set([...prev, ...cats])));
     } catch (err) {
       console.error('Error fetching articles:', err);
@@ -95,13 +97,17 @@ export default function HomePage() {
   };
 
   const fetchProducts = async () => {
-    if (!supabaseConfigured) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order');
-    if (data) setProducts(data);
+    if (!supabaseConfigured) return;
+    try {
+      const { data } = await supabase
+        .from('products')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      if (data) setProducts(data);
+    } catch (err) {
+      console.error('Error fetching products:', err);
+    }
   };
 
   const filteredQuestions = useMemo(() => {

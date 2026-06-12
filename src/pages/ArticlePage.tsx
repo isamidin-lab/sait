@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase, supabaseConfigured } from '../lib/supabase';
 import Spinner from '../components/Spinner';
 import { ArrowLeft, Calendar, Tag, Headphones, Download, Play, BookOpen } from 'lucide-react';
 
-interface FireArticle {
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -17,7 +16,7 @@ interface FireArticle {
   views: number;
   likes: number;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 function getYouTubeId(url: string): string | null {
@@ -49,7 +48,7 @@ function renderContent(text: string) {
 
 export default function ArticlePage() {
   const { id } = useParams<{ id: string }>();
-  const [article, setArticle] = useState<FireArticle | null>(null);
+  const [article, setArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,13 +56,15 @@ export default function ArticlePage() {
   }, [id]);
 
   const fetchArticle = async () => {
+    if (!supabaseConfigured) { setLoading(false); return; }
     try {
-      const snap = await getDoc(doc(db, 'articles', id!));
-      if (snap.exists()) {
-        const data = { id: snap.id, ...snap.data() } as FireArticle;
-        if (data.status === 'published') {
-          setArticle(data);
-        }
+      const { data } = await supabase
+        .from('articles')
+        .select('*')
+        .eq('id', id!)
+        .single();
+      if (data && data.status === 'published') {
+        setArticle(data as Article);
       }
     } catch (err) {
       console.error('Error fetching article:', err);
@@ -72,9 +73,9 @@ export default function ArticlePage() {
     }
   };
 
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
   };

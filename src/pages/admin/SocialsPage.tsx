@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import { Save } from 'lucide-react';
 
@@ -19,15 +18,40 @@ export default function SocialsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'socials')).then((snap) => {
-      if (snap.exists()) setLinks(snap.data() as Socials);
-    });
+    loadLinks();
   }, []);
+
+  const loadLinks = async () => {
+    if (!supabaseConfigured) return;
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('key', 'socials')
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      if (data?.value) {
+        setLinks(data.value as Socials);
+      }
+    } catch (err) {
+      console.error('Error loading socials:', err);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
+    if (!supabaseConfigured) {
+      showToast('Supabase is not configured', 'error');
+      setSaving(false);
+      return;
+    }
     try {
-      await setDoc(doc(db, 'settings', 'socials'), links);
+      const { error } = await supabase
+        .from('settings')
+        .upsert({ key: 'socials', value: links }, { onConflict: 'key' });
+
+      if (error) throw error;
       showToast('Ссылки сохранены', 'success');
     } catch {
       showToast('Ошибка при сохранении', 'error');

@@ -1,19 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db, firebaseConfigured, firebaseAuth } from '../../lib/firebase';
-import {
-  collection,
-  getDocs,
-  doc,
-  setDoc,
-  deleteDoc,
-  updateDoc,
-  query,
-  orderBy,
-} from 'firebase/firestore';
-import {
-  createUserWithEmailAndPassword,
-  deleteUser as firebaseDeleteUser,
-} from 'firebase/auth';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
@@ -61,7 +47,7 @@ export default function AdminsPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, session } = useAuth();
   const { addToast } = useToast();
 
   const [form, setForm] = useState({
@@ -76,26 +62,28 @@ export default function AdminsPage() {
   }, []);
 
   const fetchMembers = async () => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Firebase is not configured');
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
       setLoading(false);
       return;
     }
     try {
-      const q = query(collection(db, 'admins'), orderBy('created_at'));
-      const snapshot = await getDocs(q);
-      const data: TeamMember[] = snapshot.docs.map((docSnap) => {
-        const docData = docSnap.data();
-        return {
-          id: docSnap.id,
-          email: docData.email,
-          display_name: docData.display_name || '',
-          role: docData.role || 'moderator',
-          auth_user_id: docData.auth_user_id || null,
-          created_at: docData.created_at || new Date().toISOString(),
-        };
-      });
-      setMembers(data);
+      const { data, error } = await supabase
+        .from('allowed_admin_emails')
+        .select('*')
+        .order('created_at');
+
+      if (error) throw error;
+
+      const members: TeamMember[] = (data || []).map((item: any) => ({
+        id: item.id,
+        email: item.email,
+        display_name: item.display_name || '',
+        role: item.role || 'moderator',
+        auth_user_id: item.auth_user_id || null,
+        created_at: item.created_at || new Date().toISOString(),
+      }));
+      setMembers(members);
     } catch (error) {
       console.error('Error fetching admins:', error);
       addToast('error', 'Ошибка при загрузке списка участников');
@@ -109,14 +97,35 @@ export default function AdminsPage() {
     setShowPassword(false);
   };
 
+  const callEdgeFunction = async (method: string, body: object) => {
+    if (!supabaseConfigured) {
+      throw new Error('Supabase is not configured');
+    }
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const token = currentSession?.access_token || session?.access_token;
+    if (!token) throw new Error('No session token');
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const res = await fetch(`${supabaseUrl}/functions/v1/manage-admin-user`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Edge function error');
+    return data;
+  };
+
   const handleCreate = async () => {
     if (!form.fullName.trim() || !form.email.trim() || !form.password.trim()) return;
     if (form.password.length < 6) {
       addToast('error', 'Пароль должен быть не менее 6 символов');
       return;
     }
-    if (!firebaseConfigured) {
-      addToast('error', 'Firebase is not configured');
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
       return;
     }
     setSaving(true);
@@ -125,36 +134,12 @@ export default function AdminsPage() {
       const displayName = form.fullName.trim();
       const role = form.role;
 
-      // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(
-        firebaseAuth,
+      await callEdgeFunction('POST', {
         email,
-        form.password
-      );
-
-      // Save current user
-      const currentUser = firebaseAuth.currentUser;
-
-      // Sign out the newly created user to avoid changing the logged-in user
-      // Note: We cannot directly sign out a user in Firebase Client SDK without affecting currentUser
-      // The best practice is to use signInWithCustomToken on backend or handle this differently
-      // For now, we'll add the admin record and rely on the auth state to manage the session
-
-      // Add admin record to Firestore
-      await setDoc(doc(db, 'admins', email), {
-        email,
+        password: form.password,
         display_name: displayName,
         role,
-        auth_user_id: userCredential.user.uid,
-        created_at: new Date().toISOString(),
       });
-
-      // If current user exists and is different from newly created user, sign them back in
-      // This is a workaround since Firebase doesn't have a "create user as admin" without signing in
-      if (currentUser && currentUser.email !== email) {
-        // Re-authenticate with current user would require their password, so we skip this
-        // The auth state listener will handle the sign-in properly
-      }
 
       addToast('success', `Аккаунт ${email} создан`);
       resetForm();
@@ -171,12 +156,12 @@ export default function AdminsPage() {
   };
 
   const handleUpdateRole = async (member: TeamMember, newRole: 'administrator' | 'moderator') => {
-    if (!firebaseConfigured) {
-      addToast('error', 'Firebase is not configured');
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
       return;
     }
     try {
-      await updateDoc(doc(db, 'admins', member.id), { role: newRole });
+      await callEdgeFunction('PATCH', { id: member.id, role: newRole });
       addToast('success', `Роль обновлена на ${ROLE_LABELS[newRole]}`);
       setEditingRoleId(null);
       fetchMembers();
@@ -188,19 +173,13 @@ export default function AdminsPage() {
   const handleDelete = async (member: TeamMember) => {
     if (member.role === 'owner') { addToast('error', 'Нельзя удалить владельца'); return; }
     if (member.email === user?.email) { addToast('error', 'Нельзя удалить самого себя'); return; }
-    if (!firebaseConfigured) {
-      addToast('error', 'Firebase is not configured');
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
       return;
     }
     setDeletingId(member.id);
     try {
-      // Delete admin document from Firestore
-      await deleteDoc(doc(db, 'admins', member.id));
-
-      // TODO: Firebase Auth user deletion is server-side only (requires Admin SDK)
-      // For client-side, we can only delete from Firestore. If needed, implement
-      // a backend function to delete the auth user with UID: member.auth_user_id
-
+      await callEdgeFunction('DELETE', { id: member.id, auth_user_id: member.auth_user_id });
       addToast('info', `${member.display_name} удалён из команды`);
       fetchMembers();
     } catch (err) {

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import {
@@ -26,7 +25,7 @@ const CATEGORIES = [
   'Другое',
 ];
 
-interface FireQuestion {
+interface Question {
   id: string;
   question_text: string;
   author_name: string;
@@ -34,12 +33,12 @@ interface FireQuestion {
   category: string;
   status: string;
   answer_text: string | null;
-  answer_updated_at: { seconds: number } | null;
-  created_at: { seconds: number } | null;
+  answer_updated_at: string | null;
+  created_at: string | null;
 }
 
 export default function ArchivePage() {
-  const [questions, setQuestions] = useState<FireQuestion[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -52,14 +51,19 @@ export default function ArchivePage() {
   }, []);
 
   const fetchQuestions = async () => {
+    if (!supabaseConfigured) {
+      setLoading(false);
+      return;
+    }
     try {
-      const snap = await getDocs(
-        query(collection(db, 'questions'), where('status', '==', 'published'))
-      );
-      const data = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as FireQuestion))
-        .sort((a, b) => (b.created_at?.seconds ?? 0) - (a.created_at?.seconds ?? 0));
-      setQuestions(data);
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('status', 'published')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setQuestions((data || []) as Question[]);
     } catch (err) {
       console.error('Error fetching published questions:', err);
     } finally {
@@ -67,7 +71,7 @@ export default function ArchivePage() {
     }
   };
 
-  const openEdit = (q: FireQuestion) => {
+  const openEdit = (q: Question) => {
     setEditingId(q.id);
     setEditText(q.answer_text ?? '');
     setEditCategory(q.category ?? CATEGORIES[0]);
@@ -79,18 +83,27 @@ export default function ArchivePage() {
     setEditCategory('');
   };
 
-  const handleSave = async (q: FireQuestion) => {
+  const handleSave = async (q: Question) => {
     if (!editText.trim()) {
       addToast('error', 'Текст ответа не может быть пустым');
       return;
     }
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'questions', q.id), {
-        answer_text: editText.trim(),
-        category: editCategory,
-        answer_updated_at: serverTimestamp(),
-      });
+      const { error } = await supabase
+        .from('questions')
+        .update({
+          answer_text: editText.trim(),
+          category: editCategory,
+          answer_updated_at: new Date().toISOString(),
+        })
+        .eq('id', q.id);
+
+      if (error) throw error;
       addToast('success', 'Ответ обновлён');
       closeEdit();
       fetchQuestions();
@@ -102,13 +115,22 @@ export default function ArchivePage() {
     }
   };
 
-  const handleUnpublish = async (q: FireQuestion) => {
+  const handleUnpublish = async (q: Question) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await updateDoc(doc(db, 'questions', q.id), {
-        status: 'pending',
-        answer_text: null,
-        answer_updated_at: null,
-      });
+      const { error } = await supabase
+        .from('questions')
+        .update({
+          status: 'pending',
+          answer_text: null,
+          answer_updated_at: null,
+        })
+        .eq('id', q.id);
+
+      if (error) throw error;
       addToast('info', 'Вопрос возвращён в новые');
       fetchQuestions();
     } catch {
@@ -116,9 +138,18 @@ export default function ArchivePage() {
     }
   };
 
-  const handleDelete = async (q: FireQuestion) => {
+  const handleDelete = async (q: Question) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'Supabase is not configured');
+      return;
+    }
     try {
-      await deleteDoc(doc(db, 'questions', q.id));
+      const { error } = await supabase
+        .from('questions')
+        .delete()
+        .eq('id', q.id);
+
+      if (error) throw error;
       addToast('info', 'Вопрос удалён');
       fetchQuestions();
     } catch {
@@ -126,9 +157,9 @@ export default function ArchivePage() {
     }
   };
 
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
