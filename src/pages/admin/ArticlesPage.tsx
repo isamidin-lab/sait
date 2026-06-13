@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, supabaseConfigured } from '../../lib/supabase';
 import { useToast } from '../../contexts/ToastContext';
 import Spinner from '../../components/Spinner';
 import {
   FileText, Plus, Trash2, Save, X, CreditCard as Edit3,
-  Eye, EyeOff, Image, Video, BookOpen, Headphones, Bold, Italic, Heading2, List,
+  Eye, EyeOff, Image, Video, BookOpen, Headphones, Bold, Italic, Heading2, List, Upload,
 } from 'lucide-react';
 
 interface Category {
@@ -28,13 +28,30 @@ interface Article {
   created_at: string | null;
 }
 
+async function uploadToStorage(file: File, folder: string): Promise<string> {
+  const ext = file.name.split('.').pop() || 'bin';
+  const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from('articles').upload(fileName, file, {
+    cacheControl: '3600',
+    upsert: false,
+  });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('articles').getPublicUrl(fileName);
+  return data.publicUrl;
+}
+
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingField, setUploadingField] = useState<string | null>(null);
   const { addToast } = useToast();
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [form, setForm] = useState({
@@ -114,6 +131,25 @@ export default function ArticlesPage() {
     }, 0);
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'imageUrl' | 'audioUrl' | 'fileUrl', folder: string) => {
+    if (!supabaseConfigured) {
+      addToast('error', 'База данных не подключена');
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingField(field);
+    try {
+      const url = await uploadToStorage(file, folder);
+      setForm((prev) => ({ ...prev, [field]: url }));
+      addToast('success', 'Файл загружен');
+    } catch (err) {
+      addToast('error', `Ошибка загрузки: ${(err as Error).message}`);
+    }
+    setUploadingField(null);
+    e.target.value = '';
+  };
+
   const handleAdd = async () => {
     if (!form.title.trim() || !form.categoryId) return;
     if (!supabaseConfigured) {
@@ -136,8 +172,6 @@ export default function ArticlesPage() {
         admin_id: user?.id,
         views: 0,
         likes: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       });
 
       if (error) throw error;
@@ -187,7 +221,6 @@ export default function ArticlesPage() {
           audio_url: form.audioUrl.trim() || null,
           file_url: form.fileUrl.trim() || null,
           status: form.status,
-          updated_at: new Date().toISOString(),
         })
         .eq('id', editingId);
 
@@ -227,7 +260,7 @@ export default function ArticlesPage() {
     try {
       const { error } = await supabase
         .from('articles')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .update({ status: newStatus })
         .eq('id', article.id);
 
       if (error) throw error;
@@ -334,62 +367,128 @@ export default function ArticlesPage() {
               />
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
-                  <Image className="w-3 h-3" />
-                  Изображение (URL)
-                </label>
+            {/* Image upload */}
+            <div>
+              <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
+                <Image className="w-3 h-3" />
+                Изображение
+              </label>
+              <div className="flex gap-2">
                 <input
                   type="url"
                   value={form.imageUrl}
                   onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  placeholder="https://... или загрузите файл"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={uploadingField === 'imageUrl'}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {uploadingField === 'imageUrl' ? <Spinner className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+                  Загрузить
+                </button>
+                <input ref={imageInputRef} type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'imageUrl', 'images')} className="hidden" />
               </div>
-              <div>
-                <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
-                  <Video className="w-3 h-3" />
-                  Ссылка на видео (YouTube)
-                </label>
-                <input
-                  type="url"
-                  value={form.videoUrl}
-                  onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
-                  placeholder="https://youtube.com/..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
-                />
-              </div>
+              {form.imageUrl && (
+                <div className="mt-2 relative inline-block">
+                  <img src={form.imageUrl} alt="Preview" className="h-20 rounded-lg object-cover border border-slate-200" />
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, imageUrl: '' })}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div>
-                <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
-                  <Headphones className="w-3 h-3" />
-                  Аудио (URL MP3)
-                </label>
+            {/* Video link */}
+            <div>
+              <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
+                <Video className="w-3 h-3" />
+                Ссылка на видео (YouTube)
+              </label>
+              <input
+                type="url"
+                value={form.videoUrl}
+                onChange={(e) => setForm({ ...form, videoUrl: e.target.value })}
+                placeholder="https://youtube.com/..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+              />
+            </div>
+
+            {/* Audio upload */}
+            <div>
+              <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
+                <Headphones className="w-3 h-3" />
+                Аудио (MP3)
+              </label>
+              <div className="flex gap-2">
                 <input
                   type="url"
                   value={form.audioUrl}
                   onChange={(e) => setForm({ ...form, audioUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  placeholder="https://... или загрузите файл"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => audioInputRef.current?.click()}
+                  disabled={uploadingField === 'audioUrl'}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {uploadingField === 'audioUrl' ? <Spinner className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+                  Загрузить
+                </button>
+                <input ref={audioInputRef} type="file" accept="audio/*" onChange={(e) => handleFileUpload(e, 'audioUrl', 'audio')} className="hidden" />
               </div>
-              <div>
-                <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
-                  <BookOpen className="w-3 h-3" />
-                  Документ (URL PDF)
-                </label>
+              {form.audioUrl && <audio controls src={form.audioUrl} className="w-full h-10 mt-2" preload="metadata" />}
+            </div>
+
+            {/* PDF upload */}
+            <div>
+              <label className="flex items-center gap-1 text-xs font-medium text-slate-600 mb-1">
+                <BookOpen className="w-3 h-3" />
+                Документ (PDF)
+              </label>
+              <div className="flex gap-2">
                 <input
                   type="url"
                   value={form.fileUrl}
                   onChange={(e) => setForm({ ...form, fileUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+                  placeholder="https://... или загрузите файл"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingField === 'fileUrl'}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {uploadingField === 'fileUrl' ? <Spinner className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
+                  Загрузить
+                </button>
+                <input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.ppt,.pptx" onChange={(e) => handleFileUpload(e, 'fileUrl', 'documents')} className="hidden" />
               </div>
+              {form.fileUrl && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+                  <BookOpen className="w-4 h-4 text-amber-500" />
+                  <a href={form.fileUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline truncate">
+                    {form.fileUrl.split('/').pop()}
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, fileUrl: '' })}
+                    className="text-red-400 hover:text-red-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
