@@ -4,7 +4,7 @@ import { supabase, supabaseConfigured } from '../lib/supabase';
 import QuestionCard from '../components/QuestionCard';
 import ArticleCard from '../components/ArticleCard';
 import Spinner from '../components/Spinner';
-import { Search, MessageCircle, BookOpen, Filter, GraduationCap, ExternalLink, FileText, ChevronDown, BookOpenCheck } from 'lucide-react';
+import { Search, MessageCircle, BookOpen, GraduationCap, ExternalLink, FileText, ChevronDown, BookOpenCheck, BookMarked } from 'lucide-react';
 import type { Product } from '../lib/types';
 
 const ARTICLES_PAGE_SIZE = 6;
@@ -42,7 +42,7 @@ export default function HomePage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<{ name: string; slug: string; count: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -55,7 +55,7 @@ export default function HomePage() {
 
   const fetchAll = async () => {
     try {
-      await Promise.all([fetchQuestions(), fetchArticles(), fetchProducts()]);
+      await Promise.all([fetchQuestions(), fetchArticles(), fetchProducts(), fetchCategories()]);
     } finally {
       setLoading(false);
     }
@@ -63,6 +63,18 @@ export default function HomePage() {
 
   const sortByDate = <T extends { created_at?: string | null }>(arr: T[]) =>
     [...arr].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+
+  const fetchCategories = async () => {
+    if (!supabaseConfigured) return;
+    try {
+      const { data } = await supabase.from('categories').select('name, slug').neq('slug', 'general').order('name');
+      if (data) {
+        setCategories(data.map((c: { name: string; slug: string }) => ({ name: c.name, slug: c.slug, count: 0 })));
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
 
   const fetchQuestions = async () => {
     if (!supabaseConfigured) return;
@@ -73,8 +85,6 @@ export default function HomePage() {
         .eq('status', 'published');
       const sortedData = sortByDate((data ?? []) as Question[]);
       setQuestions(sortedData);
-      const cats = Array.from(new Set(sortedData.map((q) => q.category).filter(Boolean)));
-      setCategories((prev) => Array.from(new Set([...prev, ...cats])));
     } catch (err) {
       console.error('Error fetching questions:', err);
     }
@@ -89,8 +99,6 @@ export default function HomePage() {
         .eq('status', 'published');
       const sortedData = sortByDate((data ?? []) as Article[]);
       setArticles(sortedData);
-      const cats = Array.from(new Set(sortedData.map((a) => a.category).filter(Boolean)));
-      setCategories((prev) => Array.from(new Set([...prev, ...cats])));
     } catch (err) {
       console.error('Error fetching articles:', err);
     }
@@ -109,6 +117,14 @@ export default function HomePage() {
       console.error('Error fetching products:', err);
     }
   };
+
+  // Count items per category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    articles.forEach((a) => { if (a.category) counts[a.category] = (counts[a.category] || 0) + 1; });
+    questions.forEach((q) => { if (q.category) counts[q.category] = (counts[q.category] || 0) + 1; });
+    return counts;
+  }, [articles, questions]);
 
   const filteredQuestions = useMemo(() => {
     let result = questions;
@@ -158,6 +174,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* Hero */}
       <section className="relative bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-500 rounded-full blur-3xl" />
@@ -172,8 +189,7 @@ export default function HomePage() {
               Зейнуль Абидин
             </h1>
             <p className="text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto leading-relaxed">
-              Задавайте вопросы и получайте ответы от администрации.
-              Мы ценим ваше любопытство и стремимся помочь.
+              Читайте статьи, изучайте Куран и находите ответы на ваши вопросы по исламу
             </p>
           </div>
 
@@ -196,23 +212,24 @@ export default function HomePage() {
 
           <div className="mt-8 text-center flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              to="/ask"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl transition-colors duration-200 shadow-lg shadow-amber-500/25"
-            >
-              <MessageCircle className="w-5 h-5" />
-              Задать вопрос
-            </Link>
-            <Link
               to="/quran"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 text-white font-semibold rounded-xl transition-colors duration-200"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-semibold rounded-xl transition-colors duration-200 shadow-lg shadow-amber-500/25"
             >
               <BookOpenCheck className="w-5 h-5" />
               Читать Куран
+            </Link>
+            <Link
+              to="/ask"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 text-white font-semibold rounded-xl transition-colors duration-200"
+            >
+              <MessageCircle className="w-5 h-5" />
+              Задать вопрос
             </Link>
           </div>
         </div>
       </section>
 
+      {/* Products */}
       {products.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex items-center gap-2 mb-6">
@@ -262,45 +279,60 @@ export default function HomePage() {
         </section>
       )}
 
+      {/* Categories */}
       {categories.length > 0 && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center gap-2 mb-4">
-            <Filter className="w-5 h-5 text-slate-500" />
-            <h2 className="text-lg font-semibold text-slate-700">Категории</h2>
+            <BookMarked className="w-5 h-5 text-emerald-600" />
+            <h2 className="text-lg font-bold text-slate-800">Разделы</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <button
               onClick={() => handleCategoryChange('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`relative px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-center ${
                 selectedCategory === 'all'
                   ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700 hover:shadow-sm'
               }`}
             >
               Все
+              <span className={`block text-xs mt-0.5 ${selectedCategory === 'all' ? 'text-emerald-100' : 'text-slate-400'}`}>
+                {articles.length + questions.length}
+              </span>
             </button>
             {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => handleCategoryChange(cat)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  selectedCategory === cat
+              <Link
+                key={cat.slug}
+                to={`/category/${cat.slug}`}
+                onClick={() => handleCategoryChange(cat.name)}
+                className={`relative px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-center ${
+                  selectedCategory === cat.name
                     ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                    : 'bg-white text-slate-700 border border-slate-200 hover:border-emerald-300 hover:text-emerald-700 hover:shadow-sm'
                 }`}
               >
-                {cat}
-              </button>
+                {cat.name}
+                <span className={`block text-xs mt-0.5 ${selectedCategory === cat.name ? 'text-emerald-100' : 'text-slate-400'}`}>
+                  {categoryCounts[cat.name] || 0}
+                </span>
+              </Link>
             ))}
           </div>
         </section>
       )}
 
+      {/* Articles */}
       {filteredArticles.length > 0 && (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <FileText className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-lg font-semibold text-slate-700">Статьи</h2>
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-lg font-bold text-slate-800">Статьи</h2>
+              <span className="text-sm text-slate-400">({filteredArticles.length})</span>
+            </div>
+            <Link to="/articles" className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
+              Все статьи
+            </Link>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {paginatedArticles.map((article) => (
@@ -321,26 +353,44 @@ export default function HomePage() {
         </section>
       )}
 
+      {/* Questions & Answers */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        {filteredQuestions.length > 0 && (
-          <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
             <MessageCircle className="w-5 h-5 text-amber-600" />
-            <h2 className="text-lg font-semibold text-slate-700">Вопросы и ответы</h2>
+            <h2 className="text-lg font-bold text-slate-800">Вопросы и ответы</h2>
+            {filteredQuestions.length > 0 && (
+              <span className="text-sm text-slate-400">({filteredQuestions.length})</span>
+            )}
           </div>
-        )}
+          <Link
+            to="/ask"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Задать вопрос
+          </Link>
+        </div>
 
         {loading ? (
           <div className="flex justify-center py-16">
             <Spinner className="w-8 h-8 text-emerald-600" />
           </div>
         ) : !hasContent ? (
-          <div className="text-center py-16">
+          <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
             <MessageCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-500 text-lg">
+            <p className="text-slate-500 text-lg mb-4">
               {searchQuery || selectedCategory !== 'all'
                 ? 'По вашему запросу ничего не найдено'
                 : 'Пока нет опубликованных материалов'}
             </p>
+            <Link
+              to="/ask"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl transition-colors"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Задать вопрос
+            </Link>
           </div>
         ) : (
           <>

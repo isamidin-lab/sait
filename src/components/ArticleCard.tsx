@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Calendar, Tag, Eye, Headphones, Video, BookOpen, FileText } from 'lucide-react';
 
-interface FireArticle {
+interface ArticleData {
   id: string;
   title: string;
   category: string;
@@ -13,14 +13,14 @@ interface FireArticle {
   views: number;
   likes: number;
   status: string;
-  created_at: { seconds: number } | null;
+  created_at: string | null;
 }
 
 interface Props {
-  article: FireArticle;
+  article: ArticleData;
 }
 
-function ContentBadge({ article }: { article: FireArticle }) {
+function ContentBadge({ article }: { article: ArticleData }) {
   if (article.audio_url && article.video_url) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-600 text-white">
@@ -62,9 +62,9 @@ function ContentBadge({ article }: { article: FireArticle }) {
 }
 
 export default function ArticleCard({ article }: Props) {
-  const formatDate = (ts: { seconds: number } | null) => {
+  const formatDate = (ts: string | null) => {
     if (!ts) return '';
-    return new Date(ts.seconds * 1000).toLocaleDateString('ru-RU', {
+    return new Date(ts).toLocaleDateString('ru-RU', {
       day: 'numeric', month: 'long', year: 'numeric',
     });
   };
