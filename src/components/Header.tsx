@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import SupportModal from './SupportModal';
-import { BookOpen, Menu, X, LogIn, LogOut, Shield, MessageCircle, Heart, FileText, BookOpenCheck } from 'lucide-react';
+import { BookOpen, Menu, X, LogIn, LogOut, Shield, Heart, FileText, BookOpenCheck } from 'lucide-react';
 
 export default function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -43,9 +43,6 @@ export default function Header() {
               </Link>
               <Link to="/quran" className={linkClass('/quran')}>
                 Куран
-              </Link>
-              <Link to="/ask" className={linkClass('/ask')}>
-                Задать вопрос
               </Link>
               <button
                 onClick={() => setSupportOpen(true)}
@@ -114,14 +111,6 @@ export default function Header() {
               >
                 <BookOpenCheck className="w-4 h-4" />
                 Куран
-              </Link>
-              <Link
-                to="/ask"
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 py-2 px-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-amber-400 transition-colors"
-              >
-                <MessageCircle className="w-4 h-4" />
-                Задать вопрос
               </Link>
               <button
                 onClick={() => { setSupportOpen(true); setMobileOpen(false); }}
